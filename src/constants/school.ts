@@ -37,6 +37,11 @@ export const DEFAULT_SCHOOL_NPSN = '20541216';
 export const DEFAULT_SCHOOL_ADDRESS = 'Jl. Raya Desa Nglumber Kecamatan Kepohbaru Bojonegoro - Jawa Timur';
 export const DEFAULT_ACADEMIC_YEAR = '2026/2027';
 
+export const DEFAULT_SPREADSHEET_ID = '1CxeDZvZnIEMwY94lar7oILEF-vpb6acW50m5pJzZJMo';
+export const DEFAULT_DRIVE_FOLDER_ID = '1eWU2jbJpHb3vWLFggrEMBjIJtvEjjNW6';
+export const DEFAULT_DRIVE_FOLDER_URL =
+  'https://drive.google.com/drive/folders/1eWU2jbJpHb3vWLFggrEMBjIJtvEjjNW6';
+
 export const PROGRAM_TEMPLATE_DEFAULTS: Record<
   ProgramTemplateId,
   { fokus: string; target: string; waktu: string }

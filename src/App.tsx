@@ -1,8 +1,10 @@
 import { AnimatePresence, motion } from 'motion/react';
 import { Suspense, lazy, useCallback, useMemo, useState } from 'react';
+import CloudSyncModal from './components/common/CloudSyncModal';
 import Header from './components/layout/Header';
 import Sidebar from './components/layout/Sidebar';
 import { DEFAULT_SUPERVISOR_NAME } from './constants/school';
+import { CloudStorageProvider } from './contexts/CloudStorageContext';
 import { useSchoolConfig } from './hooks/useSchoolConfig';
 import { useSupervisionData } from './hooks/useSupervisionData';
 import { createEmptyInstrument } from './services/storage';
@@ -232,115 +234,118 @@ export default function App() {
   }, []);
 
   return (
-    <div className="min-h-screen flex bg-[#F8FAFC] text-gray-900">
-      <Sidebar activeTab={activeTab} setActiveTab={handleSetActiveTab} />
+    <CloudStorageProvider>
+      <div className="min-h-screen flex bg-[#F8FAFC] text-gray-900">
+        <Sidebar activeTab={activeTab} setActiveTab={handleSetActiveTab} />
 
-      <div className="flex-1 flex flex-col min-w-0">
-        <Header activeTabLabel={TAB_LABELS[activeTab]} />
+        <div className="flex-1 flex flex-col min-w-0">
+          <Header activeTabLabel={TAB_LABELS[activeTab]} />
 
-        <main className="flex-1 p-6 md:p-8 max-w-7xl w-full mx-auto">
-          <Suspense fallback={<TabFallbackLoader />}>
-            <AnimatePresence mode="wait">
-              <motion.div
-                key={activeTab === 'instrumen' && activeSession ? `instrumen-${activeSession.id}` : activeTab}
-                initial={{ opacity: 0, y: 8 }}
-                animate={{ opacity: 1, y: 0 }}
-                exit={{ opacity: 0, y: -8 }}
-                transition={{ duration: 0.18 }}
-              >
-                {activeTab === 'dashboard' && (
-                  <Dashboard
-                    setActiveTab={handleSetActiveTab}
-                    gurus={gurus}
-                    supervisions={supervisions}
-                    onDeleteSupervision={handleDeleteSupervision}
-                    setSelectedSupervisiId={setSelectedSupervisiId}
-                  />
-                )}
-
-                {activeTab === 'data-guru' && (
-                  <DataGuru
-                    gurus={gurus}
-                    supervisions={supervisions}
-                    onAddGuru={handleAddGuru}
-                    onUpdateGuru={handleUpdateGuru}
-                    onDeleteGuru={handleDeleteGuru}
-                    onAddSupervision={handleAddSupervision}
-                    onImportGurus={handleImportGurus}
-                    setSelectedSupervisiId={setSelectedSupervisiId}
-                    setActiveTab={handleSetActiveTab}
-                  />
-                )}
-
-                {activeTab === 'dokumen-perangkat' && <DokumenPerangkat />}
-
-                {activeTab === 'program' && <ProgramSupervisi gurus={gurus} />}
-
-                {activeTab === 'instrumen' &&
-                  (activeSession ? (
-                    <InstrumenSession
-                      session={activeSession}
+          <main className="flex-1 p-6 md:p-8 max-w-7xl w-full mx-auto">
+            <Suspense fallback={<TabFallbackLoader />}>
+              <AnimatePresence mode="wait">
+                <motion.div
+                  key={activeTab === 'instrumen' && activeSession ? `instrumen-${activeSession.id}` : activeTab}
+                  initial={{ opacity: 0, y: 8 }}
+                  animate={{ opacity: 1, y: 0 }}
+                  exit={{ opacity: 0, y: -8 }}
+                  transition={{ duration: 0.18 }}
+                >
+                  {activeTab === 'dashboard' && (
+                    <Dashboard
+                      setActiveTab={handleSetActiveTab}
                       gurus={gurus}
                       supervisions={supervisions}
-                      onUpdate={handleUpdateSupervision}
-                      setSupervisiId={setSelectedSupervisiId}
-                      onUpdateGuru={handleUpdateGuru}
-                      onAddGuru={handleAddGuru}
-                      onAddSupervision={handleAddSupervision}
-                      setActiveTab={handleSetActiveTab}
+                      onDeleteSupervision={handleDeleteSupervision}
+                      setSelectedSupervisiId={setSelectedSupervisiId}
                     />
-                  ) : (
-                    <InstrumenDashboard
+                  )}
+
+                  {activeTab === 'data-guru' && (
+                    <DataGuru
+                      gurus={gurus}
+                      supervisions={supervisions}
+                      onAddGuru={handleAddGuru}
+                      onUpdateGuru={handleUpdateGuru}
+                      onDeleteGuru={handleDeleteGuru}
+                      onAddSupervision={handleAddSupervision}
+                      onImportGurus={handleImportGurus}
                       setSelectedSupervisiId={setSelectedSupervisiId}
                       setActiveTab={handleSetActiveTab}
+                    />
+                  )}
+
+                  {activeTab === 'dokumen-perangkat' && <DokumenPerangkat />}
+
+                  {activeTab === 'program' && <ProgramSupervisi gurus={gurus} />}
+
+                  {activeTab === 'instrumen' &&
+                    (activeSession ? (
+                      <InstrumenSession
+                        session={activeSession}
+                        gurus={gurus}
+                        supervisions={supervisions}
+                        onUpdate={handleUpdateSupervision}
+                        setSupervisiId={setSelectedSupervisiId}
+                        onUpdateGuru={handleUpdateGuru}
+                        onAddGuru={handleAddGuru}
+                        onAddSupervision={handleAddSupervision}
+                        setActiveTab={handleSetActiveTab}
+                      />
+                    ) : (
+                      <InstrumenDashboard
+                        setSelectedSupervisiId={setSelectedSupervisiId}
+                        setActiveTab={handleSetActiveTab}
+                        gurus={gurus}
+                        supervisions={supervisions}
+                        onAdd={handleAddSupervision}
+                        onDelete={handleDeleteSupervision}
+                        onImportSchedules={handleImportSchedules}
+                        onAddGuru={handleAddGuru}
+                      />
+                    ))}
+
+                  {activeTab === 'laporan' && (
+                    <LaporanHasil
                       gurus={gurus}
                       supervisions={supervisions}
-                      onAdd={handleAddSupervision}
-                      onDelete={handleDeleteSupervision}
-                      onImportSchedules={handleImportSchedules}
+                      setActiveTab={handleSetActiveTab}
+                      selectedSupervisiId={selectedSupervisiId}
+                      setSelectedSupervisiId={setSelectedSupervisiId}
+                      onAddSupervision={handleUpsertSupervision}
                       onAddGuru={handleAddGuru}
                     />
-                  ))}
+                  )}
 
-                {activeTab === 'laporan' && (
-                  <LaporanHasil
-                    gurus={gurus}
-                    supervisions={supervisions}
-                    setActiveTab={handleSetActiveTab}
-                    selectedSupervisiId={selectedSupervisiId}
-                    setSelectedSupervisiId={setSelectedSupervisiId}
-                    onAddSupervision={handleUpsertSupervision}
-                    onAddGuru={handleAddGuru}
-                  />
-                )}
+                  {activeTab === 'tindak-lanjut' && (
+                    <TindakLanjut
+                      gurus={gurus}
+                      supervisions={supervisions}
+                      setActiveTab={handleSetActiveTab}
+                      setSelectedSupervisiId={setSelectedSupervisiId}
+                    />
+                  )}
 
-                {activeTab === 'tindak-lanjut' && (
-                  <TindakLanjut
-                    gurus={gurus}
-                    supervisions={supervisions}
-                    setActiveTab={handleSetActiveTab}
-                    setSelectedSupervisiId={setSelectedSupervisiId}
-                  />
-                )}
+                  {activeTab === 'pengaturan-sekolah' && <PengaturanSekolah />}
+                </motion.div>
+              </AnimatePresence>
+            </Suspense>
+          </main>
 
-                {activeTab === 'pengaturan-sekolah' && <PengaturanSekolah />}
-              </motion.div>
-            </AnimatePresence>
-          </Suspense>
-        </main>
-
-        <footer className="py-5 px-8 border-t border-gray-200/80 bg-white/80 text-center no-print">
-          <p className="text-xs text-gray-500">
-            © {new Date().getFullYear()} <strong>SI PERAK</strong> — Sistem Informasi Supervisi
-            Akademik Kurikulum Nasional. Dikembangkan oleh{' '}
-            <strong className="text-gray-700">{DEFAULT_SUPERVISOR_NAME}</strong> (
-            {schoolConfig.isDinasPendidikan
-              ? 'Pengawas Dinas Pendidikan Kabupaten Bojonegoro'
-              : 'Pengawas SMA Cabang Dinas Pendidikan Wilayah Bojonegoro'}
-            ).
-          </p>
-        </footer>
+          <footer className="py-5 px-8 border-t border-gray-200/80 bg-white/80 text-center no-print">
+            <p className="text-xs text-gray-500">
+              © {new Date().getFullYear()} <strong>SI PERAK</strong> — Sistem Informasi Supervisi
+              Akademik Kurikulum Nasional. Dikembangkan oleh{' '}
+              <strong className="text-gray-700">{DEFAULT_SUPERVISOR_NAME}</strong> (
+              {schoolConfig.isDinasPendidikan
+                ? 'Pengawas Dinas Pendidikan Kabupaten Bojonegoro'
+                : 'Pengawas SMA Cabang Dinas Pendidikan Wilayah Bojonegoro'}
+              ).
+            </p>
+          </footer>
+        </div>
       </div>
-    </div>
+      <CloudSyncModal />
+    </CloudStorageProvider>
   );
 }

@@ -11,31 +11,35 @@
  * 2. Salin seluruh isi file Code.gs ini ke file Code.gs pada editor Apps Script.
  * 3. Buat file HTML baru bernama "index" (index.html) lalu salin isi apps-script/index.html.
  * 4. (Opsional untuk fitur Analisis AI) Buka Project Settings > Script Properties,
- *    tambahkan property bernama: GEMINI_API_KEY dengan API Key Gemini Anda.
- * 5. Klik Deploy > New deployment > Web app (Execute as: Me, Who has access: Anyone / Organization).
+ *    tambahkan property: GEMINI_API_KEY, atau isi langsung dari menu Pengaturan Sekolah.
+ * 5. Klik Deploy > New deployment > Web app.
  * ============================================================================
  */
 
 var APP_TITLE = 'SI PERAK — Sistem Informasi Supervisi Akademik';
 var PROP_SPREADSHEET_ID = 'SIPERAK_SPREADSHEET_ID';
+var PROP_DRIVE_FOLDER_ID = 'SIPERAK_DRIVE_FOLDER_ID';
 var PROP_GEMINI_API_KEY = 'GEMINI_API_KEY';
+var DEFAULT_SPREADSHEET_ID = '1CxeDZvZnIEMwY94lar7oILEF-vpb6acW50m5pJzZJMo';
+var DEFAULT_DRIVE_FOLDER_ID = '1eWU2jbJpHb3vWLFggrEMBjIJtvEjjNW6';
 
 var SHEET_NAMES = {
   CONFIG: 'Config',
   GURU: 'DataGuru',
   SUPERVISI: 'Supervisi',
+  FOTO: 'DokumentasiFoto',
   TINDAK_LANJUT: 'TindakLanjut',
 };
 
 var DEFAULT_SCHOOL_CONFIG = {
-  schoolName: 'SMA NEGERI SI PERAK',
+  schoolName: 'SMAS DARUL ULUM KEPOHBARU',
   schoolLevel: 'SMA',
   kopAuthority: 'CABANG DINAS PENDIDIKAN WILAYAH BOJONEGORO',
-  schoolNpsn: '12345678',
-  schoolAddress: 'Jl. Raya Bojonegoro No. 123, Bojonegoro - Jawa Timur',
+  schoolNpsn: '20541216',
+  schoolAddress: 'Jl. Raya Desa Nglumber Kecamatan Kepohbaru Bojonegoro - Jawa Timur',
   academicYear: '2026/2027',
-  headmasterName: 'Drs. H. Mulyono, M.Pd.',
-  headmasterNip: '19660812 199003 1 007',
+  headmasterName: 'SALIM,S.Pd.',
+  headmasterNip: '-',
   internalSupervisorName: 'Waka Kurikulum / Guru Senior',
   internalSupervisorNip: '19780512 200501 1 009',
   supervisorName: 'Anis Fatul Cholis, M.Pd',
@@ -119,11 +123,10 @@ var DEFAULT_RUBRIC_SECTIONS = [
 
 /**
  * Entry point Web App Apps Script.
+ * Menggunakan createHtmlOutputFromFile agar seluruh script & HTML tampil utuh tanpa parsing scriptlet.
  */
 function doGet() {
-  var template = HtmlService.createTemplateFromFile('index');
-  return template
-    .evaluate()
+  return HtmlService.createHtmlOutputFromFile('index')
     .setTitle(APP_TITLE)
     .addMetaTag('viewport', 'width=device-width, initial-scale=1.0')
     .setXFrameOptionsMode(HtmlService.XFrameOptionsMode.ALLOWALL);
@@ -167,9 +170,52 @@ function promptGeminiKeyMenu_() {
 }
 
 /**
+ * Konversi nilai sel Google Sheets (termasuk Date) menjadi string aman untuk google.script.run.
+ * google.script.run dapat mengembalikan null apabila payload mengandung objek Date!
+ */
+function safeCellString_(val) {
+  if (val === null || val === undefined) return '';
+  if (Object.prototype.toString.call(val) === '[object Date]') {
+    try {
+      return Utilities.formatDate(val, Session.getScriptTimeZone() || 'Asia/Jakarta', 'yyyy-MM-dd');
+    } catch (e) {
+      return val.toISOString().split('T')[0];
+    }
+  }
+  return String(val);
+}
+
+function getTargetDriveFolderId_() {
+  var scriptProps = PropertiesService.getScriptProperties();
+  return scriptProps.getProperty(PROP_DRIVE_FOLDER_ID) || DEFAULT_DRIVE_FOLDER_ID;
+}
+
+/**
  * Mendapatkan atau membuat Spreadsheet database secara otomatis.
+ * Memprioritaskan Spreadsheet aktif / tersimpan / DEFAULT_SPREADSHEET_ID agar sinkron lintas perangkat.
  */
 function getOrCreateSpreadsheet_() {
+  var scriptProps = PropertiesService.getScriptProperties();
+  var userProps = PropertiesService.getUserProperties();
+  var storedId = scriptProps.getProperty(PROP_SPREADSHEET_ID) || userProps.getProperty(PROP_SPREADSHEET_ID);
+  if (storedId) {
+    try {
+      return SpreadsheetApp.openById(storedId);
+    } catch (err) {
+      storedId = null;
+    }
+  }
+
+  try {
+    var defaultSs = SpreadsheetApp.openById(DEFAULT_SPREADSHEET_ID);
+    if (defaultSs) {
+      scriptProps.setProperty(PROP_SPREADSHEET_ID, defaultSs.getId());
+      return defaultSs;
+    }
+  } catch (err) {
+    Logger.log('Cannot open DEFAULT_SPREADSHEET_ID directly: ' + err);
+  }
+
   var active = null;
   try {
     active = SpreadsheetApp.getActiveSpreadsheet();
@@ -180,17 +226,8 @@ function getOrCreateSpreadsheet_() {
     return active;
   }
 
-  var userProps = PropertiesService.getUserProperties();
-  var storedId = userProps.getProperty(PROP_SPREADSHEET_ID);
-  if (storedId) {
-    try {
-      return SpreadsheetApp.openById(storedId);
-    } catch (err) {
-      storedId = null;
-    }
-  }
-
   var newSs = SpreadsheetApp.create('SI PERAK - Database Supervisi Akademik');
+  scriptProps.setProperty(PROP_SPREADSHEET_ID, newSs.getId());
   userProps.setProperty(PROP_SPREADSHEET_ID, newSs.getId());
   ensureAllSheets_(newSs);
   return newSs;
@@ -222,6 +259,7 @@ function ensureAllSheets_(ss) {
     'createdAt',
     'instrumentJson',
   ]);
+  ensureSheetWithHeaders_(ss, SHEET_NAMES.FOTO, ['supervisiId', 'photoId', 'caption', 'chunkIndex', 'dataChunk']);
   ensureSheetWithHeaders_(ss, SHEET_NAMES.TINDAK_LANJUT, [
     'id',
     'guruNama',
@@ -265,9 +303,9 @@ function getConfigMap_(ss) {
 
   var rows = sheet.getRange(2, 1, lastRow - 1, 2).getValues();
   for (var i = 0; i < rows.length; i++) {
-    var k = String(rows[i][0] || '').trim();
+    var k = safeCellString_(rows[i][0]).trim();
     if (k) {
-      map[k] = rows[i][1];
+      map[k] = safeCellString_(rows[i][1]);
     }
   }
   return map;
@@ -282,7 +320,7 @@ function setConfigValue_(ss, key, valueObj) {
   if (lastRow >= 2) {
     var keys = sheet.getRange(2, 1, lastRow - 1, 1).getValues();
     for (var i = 0; i < keys.length; i++) {
-      if (String(keys[i][0] || '').trim() === key) {
+      if (safeCellString_(keys[i][0]).trim() === key) {
         sheet.getRange(i + 2, 2, 1, 2).setValues([[serialized, nowStr]]);
         return;
       }
@@ -296,7 +334,7 @@ function deleteConfigKey_(ss, key) {
   if (!sheet || sheet.getLastRow() < 2) return;
   var keys = sheet.getRange(2, 1, sheet.getLastRow() - 1, 1).getValues();
   for (var i = keys.length - 1; i >= 0; i--) {
-    if (String(keys[i][0] || '').trim() === key) {
+    if (safeCellString_(keys[i][0]).trim() === key) {
       sheet.deleteRow(i + 2);
     }
   }
@@ -335,16 +373,15 @@ function getInitialAppData() {
   ensureAllSheets_(ss);
 
   var cfgMap = getConfigMap_(ss);
-  var schoolConfig = Object.assign(
-    {},
-    DEFAULT_SCHOOL_CONFIG,
-    parseJsonSafe_(cfgMap.school_config, {}),
-  );
+  var savedSchool = parseJsonSafe_(cfgMap.school_config, {});
+  var schoolConfig = Object.assign({}, DEFAULT_SCHOOL_CONFIG, savedSchool);
   var programConfig = Object.assign(
     {},
     DEFAULT_PROGRAM_CONFIG,
     parseJsonSafe_(cfgMap.program_config, {}),
   );
+  var uploadedProgramFile = parseJsonSafe_(cfgMap.uploaded_program_file, null);
+
   var rubricSections = parseJsonSafe_(cfgMap.rubric_sections, DEFAULT_RUBRIC_SECTIONS);
   if (!Array.isArray(rubricSections) || rubricSections.length === 0) {
     rubricSections = DEFAULT_RUBRIC_SECTIONS;
@@ -361,16 +398,62 @@ function getInitialAppData() {
     PropertiesService.getScriptProperties().getProperty(PROP_GEMINI_API_KEY),
   );
 
+  var driveFolderId = getTargetDriveFolderId_();
+
   return {
     schoolConfig: schoolConfig,
     programConfig: programConfig,
+    uploadedProgramFile: uploadedProgramFile,
     rubricSections: rubricSections,
     instrumentTitle: instrumentTitle,
     gurus: gurus,
     supervisions: supervisions,
     followUps: followUps,
+    spreadsheetId: ss.getId(),
     spreadsheetUrl: ss.getUrl(),
+    driveFolderId: driveFolderId,
+    driveFolderUrl: 'https://drive.google.com/drive/folders/' + driveFolderId,
     hasGeminiKey: hasGeminiKey,
+  };
+}
+
+function saveStorageTargets(payload) {
+  var scriptProps = PropertiesService.getScriptProperties();
+  var userProps = PropertiesService.getUserProperties();
+  var ssId = String((payload && payload.spreadsheetId) || DEFAULT_SPREADSHEET_ID).trim();
+  var folderId = String((payload && payload.driveFolderId) || DEFAULT_DRIVE_FOLDER_ID).trim();
+
+  var ss = SpreadsheetApp.openById(ssId);
+  ensureAllSheets_(ss);
+  scriptProps.setProperty(PROP_SPREADSHEET_ID, ss.getId());
+  userProps.setProperty(PROP_SPREADSHEET_ID, ss.getId());
+  scriptProps.setProperty(PROP_DRIVE_FOLDER_ID, folderId);
+
+  return {
+    ok: true,
+    spreadsheetId: ss.getId(),
+    spreadsheetUrl: ss.getUrl(),
+    driveFolderId: folderId,
+    driveFolderUrl: 'https://drive.google.com/drive/folders/' + folderId,
+  };
+}
+
+function backupAllDataToDriveFolder() {
+  var data = getInitialAppData();
+  var folderId = getTargetDriveFolderId_();
+  var folder = DriveApp.getFolderById(folderId);
+  var stamp = Utilities.formatDate(
+    new Date(),
+    Session.getScriptTimeZone() || 'Asia/Jakarta',
+    'yyyyMMdd_HHmmss',
+  );
+  var fileName = 'SI_PERAK_Backup_' + stamp + '.json';
+  var file = folder.createFile(fileName, JSON.stringify(data, null, 2), MimeType.PLAIN_TEXT);
+  return {
+    ok: true,
+    fileId: file.getId(),
+    fileName: file.getName(),
+    fileUrl: file.getUrl(),
   };
 }
 
@@ -393,14 +476,14 @@ function readGurusSheet_(ss) {
     var r = rows[i];
     if (!r[0] && !r[1]) continue;
     result.push({
-      id: String(r[0]),
-      nama: String(r[1] || ''),
-      nip: String(r[2] || '-'),
-      pangkat: String(r[3] || '-'),
-      mapel: String(r[4] || ''),
-      jenjang: String(r[5] || 'SMA'),
-      status: String(r[6] || 'ASN'),
-      kelas: String(r[7] || ''),
+      id: safeCellString_(r[0]),
+      nama: safeCellString_(r[1]),
+      nip: safeCellString_(r[2]) || '-',
+      pangkat: safeCellString_(r[3]) || '-',
+      mapel: safeCellString_(r[4]),
+      jenjang: safeCellString_(r[5]) || 'SMA',
+      status: safeCellString_(r[6]) || 'ASN',
+      kelas: safeCellString_(r[7]),
     });
   }
   return result;
@@ -437,6 +520,77 @@ function writeGurusSheet_(ss, gurus) {
   sheet.getRange(2, 1, rows.length, 8).setValues(rows);
 }
 
+function readPhotosMap_(ss) {
+  var sheet = ensureSheetWithHeaders_(ss, SHEET_NAMES.FOTO, [
+    'supervisiId',
+    'photoId',
+    'caption',
+    'chunkIndex',
+    'dataChunk',
+  ]);
+  var lastRow = sheet.getLastRow();
+  var map = {};
+  if (lastRow < 2) return map;
+  var rows = sheet.getRange(2, 1, lastRow - 1, 5).getValues();
+  var grouped = {};
+  for (var i = 0; i < rows.length; i++) {
+    var svId = safeCellString_(rows[i][0]);
+    var pId = safeCellString_(rows[i][1]);
+    var cap = safeCellString_(rows[i][2]);
+    var idx = Number(rows[i][3]) || 0;
+    var chunk = safeCellString_(rows[i][4]);
+    if (!svId || !pId) continue;
+    var key = svId + '::' + pId;
+    if (!grouped[key]) grouped[key] = { svId: svId, id: pId, caption: cap, chunks: [] };
+    grouped[key].chunks[idx] = chunk;
+  }
+  Object.keys(grouped).forEach(function (k) {
+    var item = grouped[k];
+    if (!map[item.svId]) map[item.svId] = [];
+    map[item.svId].push({
+      id: item.id,
+      caption: item.caption,
+      url: item.chunks.join(''),
+    });
+  });
+  return map;
+}
+
+function writePhotosSheet_(ss, supervisions) {
+  var sheet = ensureSheetWithHeaders_(ss, SHEET_NAMES.FOTO, [
+    'supervisiId',
+    'photoId',
+    'caption',
+    'chunkIndex',
+    'dataChunk',
+  ]);
+  if (sheet.getLastRow() > 1) {
+    sheet.getRange(2, 1, sheet.getLastRow() - 1, 5).clearContent();
+  }
+  var rows = [];
+  var CHUNK_SIZE = 40000;
+  (supervisions || []).forEach(function (sv) {
+    var photos = (sv.instrument && sv.instrument.photos) || [];
+    photos.forEach(function (p) {
+      var dataUrl = String(p.url || '');
+      if (!dataUrl) return;
+      var totalChunks = Math.max(1, Math.ceil(dataUrl.length / CHUNK_SIZE));
+      for (var c = 0; c < totalChunks; c++) {
+        rows.push([
+          String(sv.id || ''),
+          String(p.id || ''),
+          String(p.caption || ''),
+          c,
+          dataUrl.slice(c * CHUNK_SIZE, (c + 1) * CHUNK_SIZE),
+        ]);
+      }
+    });
+  });
+  if (rows.length > 0) {
+    sheet.getRange(2, 1, rows.length, 5).setValues(rows);
+  }
+}
+
 function readSupervisionsSheet_(ss) {
   var sheet = ensureSheetWithHeaders_(ss, SHEET_NAMES.SUPERVISI, [
     'id',
@@ -451,17 +605,22 @@ function readSupervisionsSheet_(ss) {
   ]);
   var lastRow = sheet.getLastRow();
   if (lastRow < 2) return [];
+  var photosMap = readPhotosMap_(ss);
   var rows = sheet.getRange(2, 1, lastRow - 1, 9).getValues();
   var result = [];
   for (var i = 0; i < rows.length; i++) {
     var r = rows[i];
     if (!r[0]) continue;
-    var instr = parseJsonSafe_(String(r[8] || ''), null);
+    var svId = safeCellString_(r[0]);
+    var instr = parseJsonSafe_(safeCellString_(r[8]), null);
     if (!instr) continue;
+    if ((!instr.photos || instr.photos.length === 0) && photosMap[svId]) {
+      instr.photos = photosMap[svId];
+    }
     result.push({
-      id: String(r[0]),
-      status: String(r[5] || 'Direncakan'),
-      createdAt: String(r[7] || new Date().toISOString()),
+      id: svId,
+      status: safeCellString_(r[5]) || 'Direncakan',
+      createdAt: safeCellString_(r[7]) || new Date().toISOString(),
       instrument: instr,
     });
   }
@@ -480,23 +639,27 @@ function writeSupervisionsSheet_(ss, supervisions) {
     'createdAt',
     'instrumentJson',
   ]);
+  writePhotosSheet_(ss, supervisions);
+
   if (sheet.getLastRow() > 1) {
     sheet.getRange(2, 1, sheet.getLastRow() - 1, 9).clearContent();
   }
   if (!supervisions || supervisions.length === 0) return;
 
   var rows = supervisions.map(function (sv) {
-    var instr = sv.instrument || {};
+    var instrCopy = Object.assign({}, sv.instrument || {});
+    // Simpan foto di sheet DokumentasiFoto agar sel instrumentJson tidak melebihi batas 50.000 karakter Sheets
+    instrCopy.photos = [];
     return [
       String(sv.id || ''),
-      String(instr.guruId || ''),
-      String(instr.namaGuru || ''),
-      String(instr.mapel || ''),
-      String(instr.kelas || ''),
+      String(instrCopy.guruId || ''),
+      String(instrCopy.namaGuru || ''),
+      String(instrCopy.mapel || ''),
+      String(instrCopy.kelas || ''),
       String(sv.status || 'Direncakan'),
-      computeAvgScore_(instr.obsScores),
+      computeAvgScore_(instrCopy.obsScores),
       String(sv.createdAt || new Date().toISOString()),
-      JSON.stringify(instr),
+      JSON.stringify(instrCopy).slice(0, 49000),
     ];
   });
   sheet.getRange(2, 1, rows.length, 9).setValues(rows);
@@ -529,22 +692,22 @@ function readFollowUpsSheet_(ss) {
     var r = rows[i];
     if (!r[0] && !r[1]) continue;
     result.push({
-      id: String(r[0]),
-      guruNama: String(r[1] || ''),
-      guruNip: String(r[2] || ''),
-      mapel: String(r[3] || ''),
-      kelas: String(r[4] || ''),
-      temuan: String(r[5] || ''),
-      intervensi: String(r[6] || ''),
-      status: String(r[7] || 'Dipantau'),
-      dampak: String(r[8] || 'Dipantau'),
-      smartRekomendasi: String(r[9] || ''),
+      id: safeCellString_(r[0]),
+      guruNama: safeCellString_(r[1]),
+      guruNip: safeCellString_(r[2]),
+      mapel: safeCellString_(r[3]),
+      kelas: safeCellString_(r[4]),
+      temuan: safeCellString_(r[5]),
+      intervensi: safeCellString_(r[6]),
+      status: safeCellString_(r[7]) || 'Dipantau',
+      dampak: safeCellString_(r[8]) || 'Dipantau',
+      smartRekomendasi: safeCellString_(r[9]),
       sudahRefleksi: r[10] === true || r[10] === 'true' || r[10] === 'TRUE',
       sudahTindakLanjut: r[11] === true || r[11] === 'true' || r[11] === 'TRUE',
       perubahanPraktik: r[12] === true || r[12] === 'true' || r[12] === 'TRUE',
       perluPendampingan: r[13] === true || r[13] === 'true' || r[13] === 'TRUE',
-      tglSupervisi: String(r[14] || ''),
-      catatan: String(r[15] || ''),
+      tglSupervisi: safeCellString_(r[14]),
+      catatan: safeCellString_(r[15]),
     });
   }
   return result;
@@ -626,6 +789,20 @@ function saveProgramConfig(programConfig) {
   return { ok: true };
 }
 
+function saveUploadedProgramFile(fileObj) {
+  var ss = getOrCreateSpreadsheet_();
+  if (!fileObj) {
+    deleteConfigKey_(ss, 'uploaded_program_file');
+  } else {
+    var serialized = JSON.stringify(fileObj);
+    if (serialized.length > 48000) {
+      throw new Error('Ukuran dokumen program melebihi batas sel Google Sheets (maks ~35KB). Gunakan file ringkas atau templat resmi.');
+    }
+    setConfigValue_(ss, 'uploaded_program_file', fileObj);
+  }
+  return { ok: true };
+}
+
 function saveRubricConfig(sections, instrumentTitle) {
   var ss = getOrCreateSpreadsheet_();
   setConfigValue_(ss, 'rubric_sections', sections);
@@ -646,9 +823,16 @@ function resetRubricConfig() {
   };
 }
 
-/**
- * Sinkronisasi penuh array Guru, Supervisi, atau FollowUps dari klien.
- */
+function saveGeminiApiKey(apiKey) {
+  var clean = String(apiKey || '').trim();
+  if (!clean) {
+    PropertiesService.getScriptProperties().deleteProperty(PROP_GEMINI_API_KEY);
+    return { ok: true, hasGeminiKey: false };
+  }
+  PropertiesService.getScriptProperties().setProperty(PROP_GEMINI_API_KEY, clean);
+  return { ok: true, hasGeminiKey: true };
+}
+
 function syncAllGurus(gurus) {
   var ss = getOrCreateSpreadsheet_();
   writeGurusSheet_(ss, gurus || []);
@@ -675,7 +859,7 @@ function analyzeSupervisionWithAI(payload) {
   var apiKey = PropertiesService.getScriptProperties().getProperty(PROP_GEMINI_API_KEY);
   if (!apiKey) {
     throw new Error(
-      'GEMINI_API_KEY belum dikonfigurasi pada Project Settings > Script Properties di Apps Script.',
+      'GEMINI_API_KEY belum dikonfigurasi. Buka Pengaturan Sekolah atau Script Properties untuk mengisi API Key.',
     );
   }
 

@@ -47,12 +47,19 @@ export function useSupervisionData() {
     const syncFollowUps = () => {
       setFollowUps(loadStoredFollowUps());
     };
+    const syncCloudLoaded = () => {
+      setGurus(loadStoredGurus());
+      setSupervisions(loadStoredSupervisions());
+      setFollowUps(loadStoredFollowUps());
+    };
 
     window.addEventListener(STORAGE_EVENTS.SCHOOL_CONFIG_UPDATED, syncSchoolIntoSupervisions);
     window.addEventListener(STORAGE_EVENTS.FOLLOW_UPS_UPDATED, syncFollowUps);
+    window.addEventListener(STORAGE_EVENTS.CLOUD_DATA_LOADED, syncCloudLoaded);
     return () => {
       window.removeEventListener(STORAGE_EVENTS.SCHOOL_CONFIG_UPDATED, syncSchoolIntoSupervisions);
       window.removeEventListener(STORAGE_EVENTS.FOLLOW_UPS_UPDATED, syncFollowUps);
+      window.removeEventListener(STORAGE_EVENTS.CLOUD_DATA_LOADED, syncCloudLoaded);
     };
   }, []);
 

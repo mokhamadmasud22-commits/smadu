@@ -1,6 +1,7 @@
-import { Award, Bell, ChevronRight, Search, ShieldCheck, X } from 'lucide-react';
+import { Award, Bell, ChevronRight, Cloud, CloudOff, Search, ShieldCheck, X } from 'lucide-react';
 import { useState } from 'react';
 import { DEFAULT_SUPERVISOR_NAME, DEFAULT_SUPERVISOR_NIP } from '../../constants/school';
+import { useCloudStorage } from '../../contexts/CloudStorageContext';
 import { useSchoolConfig } from '../../hooks/useSchoolConfig';
 
 interface HeaderProps {
@@ -11,6 +12,7 @@ export default function Header({ activeTabLabel }: HeaderProps) {
   const [showCopyrightModal, setShowCopyrightModal] = useState(false);
   const [searchQuery, setSearchQuery] = useState('');
   const { config } = useSchoolConfig();
+  const { hasToken, user, setSyncModalOpen } = useCloudStorage();
 
   return (
     <>
@@ -21,13 +23,33 @@ export default function Header({ activeTabLabel }: HeaderProps) {
           <span className="font-medium text-gray-900">{activeTabLabel}</span>
         </div>
 
-        <div className="flex items-center gap-4">
-          <div className="hidden lg:flex items-center gap-2 px-3 py-1 bg-amber-50 border border-amber-200/80 rounded-full text-xs font-semibold text-amber-900">
+        <div className="flex items-center gap-3">
+          <div className="hidden xl:flex items-center gap-2 px-3 py-1 bg-amber-50 border border-amber-200/80 rounded-full text-xs font-semibold text-amber-900">
             <Award size={14} className="text-amber-600" />
             <span>
               Hak Cipta: <strong>{DEFAULT_SUPERVISOR_NAME}</strong>
             </span>
           </div>
+
+          <button
+            type="button"
+            onClick={() => setSyncModalOpen(true)}
+            title="Sinkronisasi Google Drive & Google Spreadsheet"
+            className={`inline-flex items-center gap-1.5 px-3 py-1.5 rounded-lg border text-xs font-bold transition-colors cursor-pointer ${
+              hasToken
+                ? 'bg-emerald-50 border-emerald-200 text-emerald-800 hover:bg-emerald-100'
+                : 'bg-brand-50 border-brand-200 text-brand-700 hover:bg-brand-100'
+            }`}
+          >
+            {hasToken ? <Cloud size={15} className="text-emerald-600" /> : <CloudOff size={15} />}
+            <span className="hidden sm:inline">
+              {hasToken
+                ? user?.email
+                  ? `Cloud: ${user.email.split('@')[0]}`
+                  : 'Cloud Tersambung'
+                : 'Simpan Cloud (Drive & Sheets)'}
+            </span>
+          </button>
 
           <div className="relative">
             <Search
@@ -39,7 +61,7 @@ export default function Header({ activeTabLabel }: HeaderProps) {
               value={searchQuery}
               onChange={(e) => setSearchQuery(e.target.value)}
               placeholder="Cari guru atau dokumen..."
-              className="pl-10 pr-4 py-2 bg-gray-50 border border-gray-200 rounded-lg text-sm focus:outline-none focus:ring-2 focus:ring-brand-500/20 focus:border-brand-500 transition-all w-60"
+              className="pl-10 pr-4 py-2 bg-gray-50 border border-gray-200 rounded-lg text-sm focus:outline-none focus:ring-2 focus:ring-brand-500/20 focus:border-brand-500 transition-all w-48 lg:w-56"
             />
           </div>
 

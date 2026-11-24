@@ -249,3 +249,41 @@ export interface ToastNotice {
   text: string;
   type: 'success' | 'error' | 'info';
 }
+
+export interface CloudSchoolSettingsPayload {
+  schoolName: string;
+  schoolLevel: string;
+  kopAuthority: string;
+  schoolNpsn: string;
+  schoolAddress: string;
+  academicYear: string;
+  headmasterName: string;
+  headmasterNip: string;
+  internalSupervisorName: string;
+  internalSupervisorNip: string;
+  supervisorName: string;
+  supervisorNip: string;
+  twoStageValidation: boolean;
+}
+
+export interface CloudAppSnapshot {
+  version?: number;
+  exportedAt?: string;
+  schoolConfig: CloudSchoolSettingsPayload;
+  programConfig: ProgramTemplateConfig;
+  uploadedProgramFile: UploadedProgramFile | null;
+  rubricSections: RubricSection[];
+  instrumentTitle: string;
+  gurus: Guru[];
+  supervisions: SupervisionSession[];
+  followUps: FollowUpItem[];
+}
+
+export interface DriveFileItem {
+  id: string;
+  name: string;
+  mimeType: string;
+  webViewLink?: string;
+  modifiedTime?: string;
+  size?: string;
+}

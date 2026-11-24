@@ -1,26 +1,63 @@
 import {
+  AlertCircle,
   Building2,
   Check,
+  CheckCircle2,
+  Cloud,
+  DownloadCloud,
+  ExternalLink,
+  FolderOpen,
+  HardDriveUpload,
+  LogOut,
+  RefreshCw,
+  RotateCcw,
   Save,
+  Sheet,
   ShieldCheck,
   Sliders,
+  Trash2,
+  UploadCloud,
   UserCheck,
 } from 'lucide-react';
-import { Suspense, lazy, useState } from 'react';
+import { Suspense, lazy, useEffect, useState } from 'react';
 import {
   JENJANG_OPTIONS,
   KOP_AUTHORITY_CABDIN,
   KOP_AUTHORITY_KAB,
 } from '../../constants/school';
+import { useCloudStorage } from '../../contexts/CloudStorageContext';
 import { useRubricConfig } from '../../hooks/useRubricConfig';
 import { useSchoolConfig } from '../../hooks/useSchoolConfig';
 import { countRubricItems } from '../../utils/score';
+import GoogleSignInButton from '../common/GoogleSignInButton';
 
 const InstrumentCustomizerModal = lazy(() => import('../common/InstrumentCustomizerModal'));
 
 export default function PengaturanSekolah() {
   const { config: initialConfig, updateAndSave } = useSchoolConfig();
   const { rubricSections, instrumentTitle, refresh: refreshRubrics } = useRubricConfig();
+  const {
+    user,
+    hasToken,
+    spreadsheetId,
+    driveFolderId,
+    spreadsheetTitle,
+    lastSyncAt,
+    driveFiles,
+    isBusy,
+    cloudError,
+    cloudNotice,
+    signIn,
+    signOut,
+    updateCloudTargets,
+    resetCloudTargets,
+    refreshDriveFiles,
+    pullFromSpreadsheet,
+    requestPushToSpreadsheet,
+    requestUploadBackupToDrive,
+    requestRestoreDriveBackup,
+    requestDeleteDriveFile,
+  } = useCloudStorage();
 
   const [schoolName, setSchoolName] = useState(initialConfig.schoolName);
   const [schoolLevel, setSchoolLevel] = useState(initialConfig.schoolLevel);
@@ -41,6 +78,30 @@ export default function PengaturanSekolah() {
   const [twoStageValidation, setTwoStageValidation] = useState(initialConfig.twoStageValidation);
   const [showCustomizerModal, setShowCustomizerModal] = useState(false);
   const [isSaved, setIsSaved] = useState(false);
+
+  const [sheetInput, setSheetInput] = useState(spreadsheetId);
+  const [folderInput, setFolderInput] = useState(driveFolderId);
+
+  useEffect(() => {
+    setSchoolName(initialConfig.schoolName);
+    setSchoolLevel(initialConfig.schoolLevel);
+    setKopAuthority(initialConfig.kopAuthority);
+    setSchoolNpsn(initialConfig.schoolNpsn);
+    setSchoolAddress(initialConfig.schoolAddress);
+    setAcademicYear(initialConfig.academicYear);
+    setHeadmasterName(initialConfig.headmasterName);
+    setHeadmasterNip(initialConfig.headmasterNip);
+    setInternalSupervisorName(initialConfig.internalSupervisorName);
+    setInternalSupervisorNip(initialConfig.internalSupervisorNip);
+    setSupervisorName(initialConfig.supervisorName);
+    setSupervisorNip(initialConfig.supervisorNip);
+    setTwoStageValidation(initialConfig.twoStageValidation);
+  }, [initialConfig]);
+
+  useEffect(() => {
+    setSheetInput(spreadsheetId);
+    setFolderInput(driveFolderId);
+  }, [spreadsheetId, driveFolderId]);
 
   const activeIndicatorCount = countRubricItems(rubricSections);
 
@@ -69,9 +130,262 @@ export default function PengaturanSekolah() {
       <div>
         <h2 className="text-2xl font-display font-bold text-gray-900">Pengaturan Sekolah</h2>
         <p className="text-gray-500 text-sm">
-          Konfigurasi profil sekolah, jenjang pendidikan (TK, SD, SMP, SMA, SMK, PKPLK), dan tahun
-          akademik sistem secara persisten.
+          Konfigurasi profil sekolah, jenjang pendidikan (TK, SD, SMP, SMA, SMK, PKPLK), serta
+          penyimpanan Google Drive &amp; Spreadsheet lintas perangkat.
         </p>
+      </div>
+
+      <div className="bg-white rounded-2xl border border-gray-200 shadow-sm overflow-hidden">
+        <div className="p-6 border-b border-gray-100 bg-gradient-to-r from-emerald-50/70 to-blue-50/70 flex flex-wrap items-center justify-between gap-3">
+          <div className="flex items-center gap-3">
+            <Cloud className="text-brand-600" size={20} />
+            <div>
+              <h3 className="font-display font-bold text-gray-900">
+                Penyimpanan Cloud (Google Spreadsheet &amp; Google Drive)
+              </h3>
+              <p className="text-xs text-gray-500">
+                Simpan &amp; sinkronkan data ke Google Sheets dan folder Google Drive agar tetap
+                sama saat dibuka dari perangkat lain.
+              </p>
+            </div>
+          </div>
+
+          {hasToken ? (
+            <div className="flex items-center gap-2">
+              <span className="px-2.5 py-1 rounded-lg bg-emerald-100 text-emerald-800 text-[11px] font-bold">
+                {user?.email || 'Terhubung'}
+              </span>
+              <button
+                type="button"
+                onClick={signOut}
+                disabled={isBusy}
+                className="inline-flex items-center gap-1 px-3 py-1.5 rounded-lg border border-gray-200 bg-white hover:bg-gray-50 text-xs font-bold text-gray-700 cursor-pointer"
+              >
+                <LogOut size={13} />
+                <span>Keluar</span>
+              </button>
+            </div>
+          ) : (
+            <GoogleSignInButton
+              onClick={signIn}
+              disabled={isBusy}
+              compact
+              label={user ? 'Segarkan Izin Google' : 'Masuk dengan Google'}
+            />
+          )}
+        </div>
+
+        <div className="p-8 space-y-5">
+          {cloudError && (
+            <div className="p-3.5 rounded-xl bg-rose-50 border border-rose-200 text-rose-800 text-xs flex items-start gap-2.5">
+              <AlertCircle size={16} className="shrink-0 mt-0.5 text-rose-600" />
+              <p>{cloudError}</p>
+            </div>
+          )}
+
+          {cloudNotice && (
+            <div className="p-3.5 rounded-xl bg-emerald-50 border border-emerald-200 text-emerald-800 text-xs flex items-start gap-2.5">
+              <CheckCircle2 size={16} className="shrink-0 mt-0.5 text-emerald-600" />
+              <p>{cloudNotice}</p>
+            </div>
+          )}
+
+          <div className="grid grid-cols-1 md:grid-cols-2 gap-5">
+            <div className="space-y-1.5">
+              <div className="flex items-center justify-between">
+                <label className="text-[10px] font-bold text-gray-500 uppercase tracking-widest flex items-center gap-1.5">
+                  <Sheet size={12} className="text-emerald-600" />
+                  <span>ID / Link Google Spreadsheet Database</span>
+                </label>
+                <a
+                  href={`https://docs.google.com/spreadsheets/d/${spreadsheetId}/edit`}
+                  target="_blank"
+                  rel="noopener noreferrer"
+                  className="inline-flex items-center gap-1 text-[11px] font-bold text-emerald-700 hover:underline"
+                >
+                  <span>Buka Sheet</span>
+                  <ExternalLink size={11} />
+                </a>
+              </div>
+              <input
+                type="text"
+                value={sheetInput}
+                onChange={(e) => setSheetInput(e.target.value)}
+                placeholder="ID atau URL Google Spreadsheet"
+                className="w-full p-2.5 bg-gray-50 border border-gray-200 rounded-xl text-xs font-mono focus:outline-none focus:ring-2 focus:ring-brand-500/15"
+              />
+              <p className="text-[11px] text-gray-400">
+                Aktif: <strong className="text-gray-600">{spreadsheetTitle}</strong>
+              </p>
+            </div>
+
+            <div className="space-y-1.5">
+              <div className="flex items-center justify-between">
+                <label className="text-[10px] font-bold text-gray-500 uppercase tracking-widest flex items-center gap-1.5">
+                  <FolderOpen size={12} className="text-blue-600" />
+                  <span>ID / Link Folder Google Drive</span>
+                </label>
+                <a
+                  href={`https://drive.google.com/drive/folders/${driveFolderId}`}
+                  target="_blank"
+                  rel="noopener noreferrer"
+                  className="inline-flex items-center gap-1 text-[11px] font-bold text-blue-700 hover:underline"
+                >
+                  <span>Buka Folder</span>
+                  <ExternalLink size={11} />
+                </a>
+              </div>
+              <input
+                type="text"
+                value={folderInput}
+                onChange={(e) => setFolderInput(e.target.value)}
+                placeholder="ID atau URL Folder Google Drive"
+                className="w-full p-2.5 bg-gray-50 border border-gray-200 rounded-xl text-xs font-mono focus:outline-none focus:ring-2 focus:ring-brand-500/15"
+              />
+              <p className="text-[11px] text-gray-400">
+                Digunakan untuk arsip cadangan JSON &amp; unggahan dokumen perangkat.
+              </p>
+            </div>
+          </div>
+
+          <div className="flex flex-wrap items-center justify-between gap-2 pt-1">
+            <div className="flex flex-wrap items-center gap-2">
+              <button
+                type="button"
+                onClick={() => updateCloudTargets(sheetInput, folderInput)}
+                className="px-3.5 py-2 rounded-xl border border-gray-200 bg-white hover:bg-gray-50 text-xs font-bold text-gray-700 cursor-pointer"
+              >
+                Terapkan ID Koneksi
+              </button>
+              <button
+                type="button"
+                onClick={resetCloudTargets}
+                className="inline-flex items-center gap-1 px-3 py-2 rounded-xl border border-gray-200 bg-white hover:bg-gray-50 text-xs font-semibold text-gray-500 cursor-pointer"
+              >
+                <RotateCcw size={12} />
+                <span>Reset Bawaan</span>
+              </button>
+            </div>
+
+            {lastSyncAt && (
+              <span className="text-[11px] text-emerald-700 font-semibold">
+                Sinkron terakhir: {new Date(lastSyncAt).toLocaleString('id-ID')}
+              </span>
+            )}
+          </div>
+
+          <div className="pt-3 border-t border-gray-100 flex flex-wrap gap-2.5">
+            <button
+              type="button"
+              onClick={pullFromSpreadsheet}
+              disabled={isBusy || !hasToken}
+              className="inline-flex items-center gap-2 px-4 py-2.5 rounded-xl border border-brand-200 bg-brand-50 hover:bg-brand-100 text-brand-800 text-xs font-bold cursor-pointer disabled:opacity-50 disabled:cursor-not-allowed"
+            >
+              <DownloadCloud size={15} />
+              <span>Muat Data dari Spreadsheet</span>
+            </button>
+
+            <button
+              type="button"
+              onClick={() => requestPushToSpreadsheet(true)}
+              disabled={isBusy || !hasToken}
+              className="inline-flex items-center gap-2 px-4 py-2.5 rounded-xl bg-emerald-600 hover:bg-emerald-700 text-white text-xs font-bold shadow-xs cursor-pointer disabled:opacity-50 disabled:cursor-not-allowed"
+            >
+              <UploadCloud size={15} />
+              <span>Simpan ke Spreadsheet &amp; Backup Drive</span>
+            </button>
+
+            <button
+              type="button"
+              onClick={requestUploadBackupToDrive}
+              disabled={isBusy || !hasToken}
+              className="inline-flex items-center gap-2 px-4 py-2.5 rounded-xl border border-gray-200 bg-white hover:bg-gray-50 text-gray-700 text-xs font-bold cursor-pointer disabled:opacity-50 disabled:cursor-not-allowed"
+            >
+              <HardDriveUpload size={15} />
+              <span>Cadangkan JSON ke Drive</span>
+            </button>
+          </div>
+
+          {hasToken && (
+            <div className="bg-slate-50 rounded-xl border border-gray-200 p-4 space-y-3">
+              <div className="flex items-center justify-between">
+                <p className="text-xs font-bold text-gray-800">
+                  Berkas Tersimpan di Folder Google Drive ({driveFiles.length})
+                </p>
+                <button
+                  type="button"
+                  onClick={refreshDriveFiles}
+                  disabled={isBusy}
+                  className="inline-flex items-center gap-1 text-xs font-bold text-brand-600 hover:underline cursor-pointer"
+                >
+                  <RefreshCw size={12} className={isBusy ? 'animate-spin' : ''} />
+                  <span>Segarkan</span>
+                </button>
+              </div>
+
+              {driveFiles.length === 0 ? (
+                <p className="text-xs text-gray-500 italic">
+                  Belum ada file di folder Drive ini atau klik &quot;Segarkan&quot; untuk memuat
+                  daftar terbaru.
+                </p>
+              ) : (
+                <div className="divide-y divide-gray-200 bg-white rounded-lg border border-gray-200 max-h-56 overflow-y-auto">
+                  {driveFiles.map((file) => {
+                    const isJsonBackup =
+                      file.name.toLowerCase().endsWith('.json') ||
+                      file.mimeType === 'application/json';
+                    return (
+                      <div
+                        key={file.id}
+                        className="p-2.5 flex items-center justify-between gap-3 text-xs"
+                      >
+                        <div className="min-w-0">
+                          <p className="font-semibold text-gray-900 truncate">{file.name}</p>
+                          <p className="text-[10px] text-gray-400">
+                            {file.modifiedTime
+                              ? new Date(file.modifiedTime).toLocaleString('id-ID')
+                              : '-'}
+                          </p>
+                        </div>
+                        <div className="flex items-center gap-1.5 shrink-0">
+                          {isJsonBackup && (
+                            <button
+                              type="button"
+                              onClick={() => requestRestoreDriveBackup(file)}
+                              disabled={isBusy}
+                              className="px-2.5 py-1 rounded-md bg-brand-50 hover:bg-brand-100 text-brand-700 font-bold text-[11px] cursor-pointer"
+                            >
+                              Pulihkan
+                            </button>
+                          )}
+                          {file.webViewLink && (
+                            <a
+                              href={file.webViewLink}
+                              target="_blank"
+                              rel="noopener noreferrer"
+                              className="px-2.5 py-1 rounded-md bg-gray-100 hover:bg-gray-200 text-gray-700 font-semibold text-[11px]"
+                            >
+                              Lihat
+                            </a>
+                          )}
+                          <button
+                            type="button"
+                            onClick={() => requestDeleteDriveFile(file)}
+                            disabled={isBusy}
+                            title="Hapus dari Drive"
+                            className="p-1.5 rounded-md bg-rose-50 hover:bg-rose-100 text-rose-600 cursor-pointer"
+                          >
+                            <Trash2 size={13} />
+                          </button>
+                        </div>
+                      </div>
+                    );
+                  })}
+                </div>
+              )}
+            </div>
+          )}
+        </div>
       </div>
 
       <div className="bg-white rounded-2xl border border-gray-200 shadow-sm overflow-hidden">

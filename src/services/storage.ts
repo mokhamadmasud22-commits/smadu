@@ -1,5 +1,6 @@
 import {
   DEFAULT_ACADEMIC_YEAR,
+  DEFAULT_DRIVE_FOLDER_ID,
   DEFAULT_HEADMASTER_NAME,
   DEFAULT_HEADMASTER_NIP,
   DEFAULT_INTERNAL_SUPERVISOR_NAME,
@@ -7,6 +8,7 @@ import {
   DEFAULT_SCHOOL_ADDRESS,
   DEFAULT_SCHOOL_NAME,
   DEFAULT_SCHOOL_NPSN,
+  DEFAULT_SPREADSHEET_ID,
   DEFAULT_SUPERVISOR_NAME,
   DEFAULT_SUPERVISOR_NIP,
   KOP_AUTHORITY_CABDIN,
@@ -18,6 +20,7 @@ import {
   DEFAULT_RUBRIC_SECTIONS,
 } from '../constants/rubrics';
 import type {
+  CloudAppSnapshot,
   FollowUpItem,
   Guru,
   ProgramTemplateConfig,
@@ -39,6 +42,7 @@ export const STORAGE_EVENTS = {
   SCHOOL_CONFIG_UPDATED: 'school_config_updated',
   INSTRUMENT_CONFIG_UPDATED: 'instrument_config_updated',
   FOLLOW_UPS_UPDATED: 'supervisi_follow_ups_updated',
+  CLOUD_DATA_LOADED: 'cloud_data_loaded',
 } as const;
 
 export function getEffectiveSupervisorName(): string {
@@ -415,3 +419,125 @@ export function saveUploadedProgramFile(file: UploadedProgramFile | null): void 
     localStorage.removeItem('school_program_custom_file');
   }
 }
+
+export function extractGoogleIdFromInput(raw: string): string {
+  const trimmed = raw.trim();
+  if (!trimmed) return '';
+  const folderMatch = trimmed.match(/\/folders\/([a-zA-Z0-9_-]+)/);
+  if (folderMatch?.[1]) return folderMatch[1];
+  const sheetMatch = trimmed.match(/\/spreadsheets\/d\/([a-zA-Z0-9_-]+)/);
+  if (sheetMatch?.[1]) return sheetMatch[1];
+  const fileMatch = trimmed.match(/\/d\/([a-zA-Z0-9_-]+)/);
+  if (fileMatch?.[1]) return fileMatch[1];
+  return trimmed.split(/[?#]/)[0];
+}
+
+export function getStoredSpreadsheetId(): string {
+  return localStorage.getItem('siperak_spreadsheet_id') || DEFAULT_SPREADSHEET_ID;
+}
+
+export function setStoredSpreadsheetId(id: string): void {
+  const clean = extractGoogleIdFromInput(id);
+  if (clean) {
+    localStorage.setItem('siperak_spreadsheet_id', clean);
+  } else {
+    localStorage.removeItem('siperak_spreadsheet_id');
+  }
+}
+
+export function getStoredDriveFolderId(): string {
+  return localStorage.getItem('siperak_drive_folder_id') || DEFAULT_DRIVE_FOLDER_ID;
+}
+
+export function setStoredDriveFolderId(id: string): void {
+  const clean = extractGoogleIdFromInput(id);
+  if (clean) {
+    localStorage.setItem('siperak_drive_folder_id', clean);
+  } else {
+    localStorage.removeItem('siperak_drive_folder_id');
+  }
+}
+
+export function collectLocalSnapshotForCloud(): CloudAppSnapshot {
+  const cfg = loadSchoolConfig();
+  return {
+    version: 1,
+    exportedAt: new Date().toISOString(),
+    schoolConfig: {
+      schoolName: cfg.schoolName,
+      schoolLevel: cfg.schoolLevel,
+      kopAuthority: cfg.kopAuthority,
+      schoolNpsn: cfg.schoolNpsn,
+      schoolAddress: cfg.schoolAddress,
+      academicYear: cfg.academicYear,
+      headmasterName: cfg.headmasterName,
+      headmasterNip: cfg.headmasterNip,
+      internalSupervisorName: cfg.internalSupervisorName,
+      internalSupervisorNip: cfg.internalSupervisorNip,
+      supervisorName: cfg.supervisorName,
+      supervisorNip: cfg.supervisorNip,
+      twoStageValidation: cfg.twoStageValidation,
+    },
+    programConfig: loadProgramTemplateConfig(),
+    uploadedProgramFile: loadUploadedProgramFile(),
+    rubricSections: loadActiveRubricSections(),
+    instrumentTitle: loadActiveInstrumentTitle(),
+    gurus: loadStoredGurus(),
+    supervisions: loadStoredSupervisions(),
+    followUps: loadStoredFollowUps(),
+  };
+}
+
+export function applyCloudSnapshotToLocalStorage(snapshot: Partial<CloudAppSnapshot>): void {
+  if (snapshot.schoolConfig) {
+    const sc = snapshot.schoolConfig;
+    if (sc.schoolName !== undefined) localStorage.setItem('school_name', sc.schoolName);
+    if (sc.schoolLevel !== undefined) localStorage.setItem('school_level', sc.schoolLevel);
+    if (sc.kopAuthority !== undefined) localStorage.setItem('school_kop_authority', sc.kopAuthority);
+    if (sc.schoolNpsn !== undefined) localStorage.setItem('school_npsn', sc.schoolNpsn);
+    if (sc.schoolAddress !== undefined) localStorage.setItem('school_address', sc.schoolAddress);
+    if (sc.academicYear !== undefined) localStorage.setItem('school_academic_year', sc.academicYear);
+    if (sc.headmasterName !== undefined) localStorage.setItem('school_headmaster_name', sc.headmasterName);
+    if (sc.headmasterNip !== undefined) localStorage.setItem('school_headmaster_nip', sc.headmasterNip);
+    if (sc.internalSupervisorName !== undefined) {
+      localStorage.setItem('school_internal_supervisor_name', sc.internalSupervisorName);
+    }
+    if (sc.internalSupervisorNip !== undefined) {
+      localStorage.setItem('school_internal_supervisor_nip', sc.internalSupervisorNip);
+    }
+    if (sc.supervisorName !== undefined) localStorage.setItem('school_supervisor_name', sc.supervisorName);
+    if (sc.supervisorNip !== undefined) localStorage.setItem('school_supervisor_nip', sc.supervisorNip);
+    if (sc.twoStageValidation !== undefined) {
+      localStorage.setItem('school_two_stage', String(sc.twoStageValidation));
+    }
+  }
+
+  if (snapshot.programConfig) {
+    saveProgramTemplateConfig(snapshot.programConfig);
+  }
+  if (snapshot.uploadedProgramFile !== undefined) {
+    saveUploadedProgramFile(snapshot.uploadedProgramFile);
+  }
+  if (Array.isArray(snapshot.rubricSections) && snapshot.rubricSections.length > 0) {
+    localStorage.setItem('school_custom_rubric_sections', JSON.stringify(snapshot.rubricSections));
+  }
+  if (snapshot.instrumentTitle) {
+    localStorage.setItem('school_instrument_name', snapshot.instrumentTitle);
+  }
+  if (Array.isArray(snapshot.gurus)) {
+    localStorage.setItem('gurus', JSON.stringify(snapshot.gurus));
+  }
+  if (Array.isArray(snapshot.supervisions)) {
+    localStorage.setItem('supervisions', JSON.stringify(snapshot.supervisions));
+  }
+  if (Array.isArray(snapshot.followUps)) {
+    localStorage.setItem('supervisi_follow_ups', JSON.stringify(snapshot.followUps));
+  }
+
+  window.dispatchEvent(new Event(STORAGE_EVENTS.SCHOOL_CONFIG_UPDATED));
+  window.dispatchEvent(new Event(STORAGE_EVENTS.INSTRUMENT_CONFIG_UPDATED));
+  window.dispatchEvent(new Event(STORAGE_EVENTS.FOLLOW_UPS_UPDATED));
+  window.dispatchEvent(new Event(STORAGE_EVENTS.CLOUD_DATA_LOADED));
+  window.dispatchEvent(new Event('storage'));
+}
+
