@@ -1,0 +1,2311 @@
+<!DOCTYPE html>
+<html lang="id">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+  <title>SI PERAK — Sistem Informasi Supervisi Akademik</title>
+  <script src="https://cdn.tailwindcss.com"></script>
+  <script>
+    tailwind.config = {
+      theme: {
+        extend: {
+          colors: {
+            brand: {
+              50: '#eff6ff',
+              100: '#dbeafe',
+              200: '#bfdbfe',
+              300: '#93c5fd',
+              400: '#60a5fa',
+              500: '#3b82f6',
+              600: '#2563eb',
+              700: '#1d4ed8',
+              800: '#1e40af',
+              900: '#1e3a8a',
+              950: '#172554',
+            },
+          },
+          fontFamily: {
+            sans: ['Inter', 'ui-sans-serif', 'system-ui', 'sans-serif'],
+            display: ['Plus Jakarta Sans', 'Inter', 'ui-sans-serif', 'system-ui', 'sans-serif'],
+          },
+        },
+      },
+    };
+  </script>
+  <link rel="preconnect" href="https://fonts.googleapis.com" />
+  <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin />
+  <link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700;800&family=Plus+Jakarta+Sans:wght@600;700;800&display=swap" rel="stylesheet" />
+  <script src="https://unpkg.com/lucide@latest/dist/umd/lucide.min.js"></script>
+  <script src="https://cdn.jsdelivr.net/npm/xlsx@0.18.5/dist/xlsx.full.min.js"></script>
+  <script src="https://cdn.jsdelivr.net/npm/jspdf@2.5.2/dist/jspdf.umd.min.js"></script>
+  <script src="https://cdn.jsdelivr.net/npm/jspdf-autotable@3.8.4/dist/jspdf.plugin.autotable.min.js"></script>
+  <style>
+    @media print {
+      @page { size: A4 portrait; margin: 14mm; }
+      body { background: #ffffff !important; color: #000000 !important; -webkit-print-color-adjust: exact; print-color-adjust: exact; }
+      .no-print { display: none !important; }
+      .print-document-container { border: none !important; box-shadow: none !important; margin: 0 !important; padding: 0 !important; width: 100% !important; max-width: 100% !important; }
+    }
+    .avoid-break { break-inside: avoid; page-break-inside: avoid; }
+  </style>
+</head>
+<body class="bg-[#F8FAFC] text-gray-900 font-sans antialiased">
+  <div id="app" class="min-h-screen flex">
+    <div class="m-auto flex flex-col items-center gap-3 text-gray-400">
+      <div class="w-9 h-9 border-2 border-brand-600 border-t-transparent rounded-full animate-spin"></div>
+      <p class="text-xs font-semibold tracking-wide">Memuat SI PERAK...</p>
+    </div>
+  </div>
+
+  <!-- Toast & Modal Root -->
+  <div id="toast-root" class="fixed bottom-5 right-5 z-50 space-y-2 pointer-events-none no-print"></div>
+  <div id="modal-root" class="no-print"></div>
+
+  <script>
+    (function () {
+      'use strict';
+
+      // =====================================================================
+      // KONSTANTA & DATA REFERENSI SI PERAK
+      // =====================================================================
+      var DEFAULT_SUPERVISOR_NAME = 'Anis Fatul Cholis, M.Pd';
+      var DEFAULT_SUPERVISOR_NIP = '19740825 199802 2 004';
+      var KOP_AUTHORITY_KAB = 'DINAS PENDIDIKAN KABUPATEN BOJONEGORO';
+      var KOP_AUTHORITY_CABDIN = 'CABANG DINAS PENDIDIKAN WILAYAH BOJONEGORO';
+
+      var JENJANG_OPTIONS = [
+        { id: 'TK', label: 'TK / PAUD', full: 'Taman Kanak-Kanak / PAUD' },
+        { id: 'SD', label: 'SD / MI', full: 'Sekolah Dasar / MI' },
+        { id: 'SMP', label: 'SMP / MTs', full: 'Sekolah Menengah Pertama' },
+        { id: 'SMA', label: 'SMA / MA', full: 'Sekolah Menengah Atas' },
+        { id: 'SMK', label: 'SMK / MAK', full: 'Sekolah Menengah Kejuruan' },
+        { id: 'PKPLK', label: 'PKPLK / SLB', full: 'Pendidikan Khusus & Layanan Khusus' },
+      ];
+
+      var STATUS_KEPEGAWAIAN = ['ASN', 'P3K', 'GTT', 'Guru Yayasan'];
+
+      var TAB_ITEMS = [
+        { id: 'dashboard', label: 'Dashboard', icon: 'layout-dashboard' },
+        { id: 'data-guru', label: 'Data Guru', icon: 'users' },
+        { id: 'dokumen-perangkat', label: 'Dokumen Perangkat', icon: 'book-open' },
+        { id: 'program', label: 'Program Supervisi', icon: 'clipboard-list' },
+        { id: 'instrumen', label: 'Instrumen Supervisi', icon: 'check-square' },
+        { id: 'laporan', label: 'Laporan Hasil', icon: 'printer' },
+        { id: 'tindak-lanjut', label: 'Tindak Lanjut Supervisi', icon: 'trending-up' },
+        { id: 'pengaturan-sekolah', label: 'Pengaturan Sekolah', icon: 'school' },
+      ];
+
+      var PROGRAM_TEMPLATE_OPTIONS = [
+        {
+          id: 'klinis-standar',
+          title: 'Kurikulum Nasional (5 Alur Klinis)',
+          desc: 'Supervisi kemitraan 3 siklus lengkap (Pra-Obs, Observasi, Pasca-Obs/RTL).',
+          badge: 'Standar Resmi',
+          fokus: 'Supervisi Klinis Kemitraan Berbasis Siklus 5 Tahap Kurikulum Nasional',
+          target: 'Minimal 85% guru mencapai predikat kinerja "Baik" atau "Sangat Baik" dalam siklus refleksi',
+          waktu: 'Juli 2026 s.d. Juni 2027 (Semester Ganjil & Genap)',
+        },
+        {
+          id: 'deep-learning',
+          title: 'Pembelajaran Mendalam (Deep Learning)',
+          desc: 'Fokus 3 pilar: Mindful Learning, Meaningful Learning, dan Joyful Learning.',
+          badge: 'Deep Learning',
+          fokus: 'Implementasi 3 Pilar Pembelajaran Mendalam (Mindful, Meaningful, & Joyful Learning)',
+          target: '100% guru menerapkan asesmen bermakna dan pembelajaran berpusat pada nalar kritis siswa',
+          waktu: 'Agustus 2026 s.d. Mei 2027',
+        },
+        {
+          id: 'diferensiasi',
+          title: 'Pembelajaran Berdiferensiasi & Disiplin Positif',
+          desc: 'Diferensiasi konten, proses, produk serta penegakan budaya positif & restitusi.',
+          badge: 'Diferensiasi',
+          fokus: 'Optimalisasi Modul Ajar Berdiferensiasi dan Penguatan Disiplin Positif Kelas',
+          target: 'Seluruh guru mampu memetakan kesiapan murid serta menerapkan restitusi budaya positif',
+          waktu: 'Sepanjang Tahun Pelajaran 2026/2027',
+        },
+        {
+          id: 'matriks-rpa',
+          title: 'Matriks Rencana Pengawasan (RPA)',
+          desc: 'Format tabel matriks ringkas eksekutif siap tanda tangan untuk pengawas.',
+          badge: 'Format Matriks',
+          fokus: 'Rencana Pengawasan Akademik Terpadu (Pra-Observasi, Observasi, Pasca-Obs, dan RTL)',
+          target: 'Terlaksananya 100% siklus supervisi akademik dan tersusunnya laporan rekomendasi tindak lanjut',
+          waktu: 'Semester Ganjil & Genap Tahun Pelajaran 2026/2027',
+        },
+      ];
+
+      var DEFAULT_RUBRIC_SECTIONS = [
+        {
+          id: 'pendahuluan',
+          title: 'A. PENDAHULUAN (Fokus: Kesiapan & Apersepsi)',
+          items: [
+            { id: 'p1', label: 'Membangun Kesiapan & Motivasi', desc: 'Membangun suasana kelas yang positif, apersepsi yang relevan, dan memotivasi siswa untuk belajar mendalam.' },
+            { id: 'p2', label: 'Penyampaian Tujuan & Alur', desc: 'Menjelaskan tujuan pembelajaran dan skenario kegiatan dengan bahasa yang dipahami siswa.' },
+          ],
+        },
+        {
+          id: 'inti',
+          title: 'B. INTI (Fokus: Deep Learning & Kurikulum Nasional)',
+          items: [
+            { id: 'i1', label: 'Penguasaan Materi Mendalam', desc: 'Mampu menghubungkan materi dengan konteks nyata dan memantik berpikir kritis.' },
+            { id: 'i2', label: 'Strategi Berdiferensiasi', desc: 'Melayani kebutuhan belajar yang berbeda melalui variasi konten, proses, atau produk.' },
+            { id: 'i3', label: 'Pemanfaatan Media & IT', desc: 'Menggunakan alat bantu pembelajaran secara efektif untuk meningkatkan keterlibatan.' },
+            { id: 'i4', label: 'Interaksi & Kolaborasi', desc: 'Mendorong diskusi antar siswa dan membimbing kerja kelompok secara aktif.' },
+          ],
+        },
+        {
+          id: 'penutup',
+          title: 'C. PENUTUP (Fokus: Refleksi & Evaluasi)',
+          items: [
+            { id: 't1', label: 'Refleksi Pembelajaran', desc: 'Mengajak siswa menyimpulkan apa yang telah dipelajari dan dampaknya.' },
+            { id: 't2', label: 'Evaluasi & Umpan Balik', desc: 'Memberikan penguatan dan feedback yang konstruktif untuk perbaikan selanjutnya.' },
+          ],
+        },
+      ];
+
+      var PRESET_INSTRUMENTS = [
+        {
+          id: 'default_deep_learning',
+          name: 'Standar Nasional & Deep Learning (Default)',
+          badge: 'Standar BSNP/Kurnas',
+          description: 'Fokus pada kesiapan apersepsi, penguasaan materi mendalam, pembelajaran bermakna, dan evaluasi reflektif.',
+          sections: DEFAULT_RUBRIC_SECTIONS,
+        },
+        {
+          id: 'kurikulum_merdeka_diferensiasi',
+          name: 'Kurikulum Merdeka - Pembelajaran Berdiferensiasi & PSE',
+          badge: 'Kurikulum Merdeka',
+          description: 'Fokus pemetaan kesiapan belajar, diferensiasi konten/proses/produk, dan Pembelajaran Sosial Emosional.',
+          sections: [
+            {
+              id: 'km_pendahuluan',
+              title: 'A. PRA-PEMBELAJARAN & KONDISI EMOSIONAL (PSE)',
+              items: [
+                { id: 'km_p1', label: 'Asesmen Diagnostik Awal & Mindful Check-in', desc: 'Melakukan checking emosional murid dan memetakan pemahaman awal topik.' },
+                { id: 'km_p2', label: 'Penyampaian Tujuan & Kesepakatan Kelas', desc: 'Membangun komitmen belajar partisipatif dan memperjelas KKTP.' },
+              ],
+            },
+            {
+              id: 'km_inti',
+              title: 'B. PELAKSANAAN PEMBELAJARAN BERDIFERENSIASI',
+              items: [
+                { id: 'km_i1', label: 'Diferensiasi Konten & Bahan Ajar', desc: 'Menyediakan ragam media ajar sesuai profil belajar murid.' },
+                { id: 'km_i2', label: 'Diferensiasi Proses & Scaffolding', desc: 'Memberikan pendampingan bertingkat sesuai kesiapan murid.' },
+                { id: 'km_i3', label: 'Pilihan Diferensiasi Produk / Unjuk Kerja', desc: 'Memberi ruang murid mengekspresikan pemahaman dalam berbagai format karya.' },
+                { id: 'km_i4', label: 'Pemanfaatan Platform Digital / PMM', desc: 'Memanfaatkan asesmen digital atau sumber belajar interaktif.' },
+              ],
+            },
+            {
+              id: 'km_penutup',
+              title: 'C. ASESMEN FORMATIF & REFLEKSI BERMAKNA',
+              items: [
+                { id: 'km_t1', label: 'Exit Ticket & Umpan Balik Formatif', desc: 'Mengukur pemahaman harian dengan instrumen evaluasi cepat.' },
+                { id: 'km_t2', label: 'Refleksi Diri & Rencana Tindak Lanjut Siswa', desc: 'Memandu murid menilai proses belajarnya sendiri.' },
+              ],
+            },
+          ],
+        },
+        {
+          id: 'pmm_observasi_kinerja',
+          name: 'Pengelolaan Kinerja Guru PMM',
+          badge: 'Regulasi Dirjen GTK',
+          description: 'Keteraturan Suasana Kelas, Penerapan Disiplin Positif, dan Eksplorasi Konsep Interaktif.',
+          sections: [
+            {
+              id: 'pmm_keteraturan',
+              title: 'A. KETERATURAN SUASANA KELAS',
+              items: [
+                { id: 'pmm_k1', label: 'Penyampaian Aturan & Harapan Positif', desc: 'Memanggil murid dengan namanya, mengelola transisi aktivitas dengan teratur.' },
+                { id: 'pmm_k2', label: 'Pengelolaan Fokus & Perhatian Belajar', desc: 'Menarik perhatian murid dengan sinyal yang disepakati bersama.' },
+              ],
+            },
+            {
+              id: 'pmm_disiplin',
+              title: 'B. PENERAPAN DISIPLIN POSITIF & UMPAN BALIK',
+              items: [
+                { id: 'pmm_d1', label: 'Refleksi terhadap Keyakinan Kelas', desc: 'Mengajak murid mengingat keyakinan kelas tanpa hukuman sepihak.' },
+                { id: 'pmm_d2', label: 'Pemberian Penguatan & Apresiasi Terarah', desc: 'Memberikan umpan balik konstruktif berfokus pada usaha murid.' },
+              ],
+            },
+            {
+              id: 'pmm_instruksi',
+              title: 'C. INSTRUKSI YANG ADAPTIF & INTERAKTIF',
+              items: [
+                { id: 'pmm_i1', label: 'Pertanyaan Pemantik Tingkat Tinggi (HOTS)', desc: 'Mengajukan pertanyaan terbuka yang merangsang nalar kritis.' },
+                { id: 'pmm_i2', label: 'Penyesuaian Responsif terhadap Kendala Murid', desc: 'Mengubah strategi penjelasan saat mendapati miskonsepsi.' },
+              ],
+            },
+          ],
+        },
+        {
+          id: 'smk_praktik_kejuruan',
+          name: 'Supervisi Praktik Kejuruan / Bengkel / Lab (SMK)',
+          badge: 'Vokasi & Laboratorium',
+          description: 'Standar pengawasan praktik bengkel kejuruan, kepatuhan K3LH, dan budaya kerja 5R.',
+          sections: [
+            {
+              id: 'smk_k3lh',
+              title: 'A. KESIAPAN ALAT, SOP & K3LH BENGKEL/LAB',
+              items: [
+                { id: 'smk_k1', label: 'Penerapan K3LH & APD', desc: 'Guru dan siswa menerapkan standar keselamatan kerja dan APD lengkap.' },
+                { id: 'smk_k2', label: 'Pengecekan Job Sheet & Kesiapan Alat', desc: 'Menjelaskan alur job sheet dan memastikan alat/bahan prima.' },
+              ],
+            },
+            {
+              id: 'smk_praktik',
+              title: 'B. PELAKSANAAN BIMBINGAN PRAKTIK',
+              items: [
+                { id: 'smk_p1', label: 'Demonstrasi Keterampilan & Ketelitian', desc: 'Memberikan demonstrasi operasional secara presisi dan aman.' },
+                { id: 'smk_p2', label: 'Pendampingan Teknis & Troubleshooting', desc: 'Membimbing penyelesaian kendala teknis sesuai standar industri.' },
+              ],
+            },
+            {
+              id: 'smk_evaluasi',
+              title: 'C. PENGUJIAN PRODUK & BUDAYA 5R',
+              items: [
+                { id: 'smk_e1', label: 'Uji Fungsi / Penilaian Job Result', desc: 'Melakukan uji fungsi dan pengukuran kualitas produk bersama siswa.' },
+                { id: 'smk_e2', label: 'Penerapan Budaya Kerja 5R', desc: 'Memastikan pembersihan mesin dan penataan kembali perkakas sesuai SOP.' },
+              ],
+            },
+          ],
+        },
+      ];
+
+      var PROBLEM_CATEGORIES = [
+        {
+          name: 'Diferensiasi Pembelajaran',
+          shortName: 'Diferensiasi',
+          rubricIds: ['i2', 'km_i1', 'km_i2', 'km_i3'],
+          keywords: ['diferensiasi', 'konten', 'proses', 'produk', 'gaya belajar', 'scaffolding'],
+          defaultIntervensi: 'Modul berdiferensiasi',
+          solusiIHT: 'In-House Training (IHT) penyusunan modul ajar berdiferensiasi dan asesmen diagnostik non-kognitif.',
+        },
+        {
+          name: 'Keaktifan Siswa (Student Agency)',
+          shortName: 'Keaktifan Siswa',
+          rubricIds: ['i4', 'p1', 'km_p2', 'pmm_i1'],
+          keywords: ['aktif', 'partisipasi', 'pbl', 'pjbl', 'kolaborasi', 'diskusi', 'pasif'],
+          defaultIntervensi: 'PBL (Problem Based Learning)',
+          solusiIHT: 'Workshop model pembelajaran partisipatif berbasis masalah (PBL) dan kerja kelompok heterogen.',
+        },
+        {
+          name: 'Asesmen Formatif & Umpan Balik',
+          shortName: 'Asesmen Formatif',
+          rubricIds: ['t2', 'km_t1', 'km_t2', 'pmm_d2'],
+          keywords: ['asesmen', 'formatif', 'umpan balik', 'feedback', 'exit ticket', 'evaluasi', 'refleksi'],
+          defaultIntervensi: 'Exit ticket (Asesmen Cepat)',
+          solusiIHT: 'Pelatihan teknik evaluasi cepat harian (Exit Ticket digital & self-assessment murid).',
+        },
+        {
+          name: 'Pemanfaatan Teknologi / Media',
+          shortName: 'Teknologi & Media',
+          rubricIds: ['i3', 'km_i4'],
+          keywords: ['teknologi', 'media', 'it', 'digital', 'ict', 'canva', 'quizizz', 'video'],
+          defaultIntervensi: 'Workshop Pembelajaran Berbasis IT',
+          solusiIHT: 'Coaching pemanfaatan platform digital interaktif (Canva for Education, Quizizz, PMM).',
+        },
+        {
+          name: 'Manajemen Kelas & Disiplin Positif',
+          shortName: 'Manajemen Kelas',
+          rubricIds: ['pmm_k1', 'pmm_k2', 'pmm_d1', 'p1'],
+          keywords: ['manajemen kelas', 'disiplin', 'kondusif', 'kegaduhan', 'keyakinan kelas', 'restitusi'],
+          defaultIntervensi: 'Segitiga Restitusi Kelas',
+          solusiIHT: 'Penyusunan Keyakinan Kelas partisipatif dan penerapan Segitiga Restitusi tanpa hukuman.',
+        },
+        {
+          name: 'Literasi & Numerasi Mendalam',
+          shortName: 'Literasi & Numerasi',
+          rubricIds: ['i1', 'pmm_i1'],
+          keywords: ['literasi', 'numerasi', 'hots', 'menalar', 'kritis', 'materi mendalam'],
+          defaultIntervensi: 'Bimtek LKPD HOTS & Literasi',
+          solusiIHT: 'Workshop integrasi teks multimodal LKPD HOTS dan studi kasus kontekstual.',
+        },
+      ];
+
+      // =====================================================================
+      // STATE GLOBAL APLIKASI
+      // =====================================================================
+      var state = {
+        activeTab: 'dashboard',
+        selectedSupervisiId: null,
+        sessionStage: 'pra',
+        searchQuery: '',
+        guruSearch: '',
+        guruJenjangFilter: 'ALL',
+        tlSearch: '',
+        tlImpactFilter: 'all',
+        tlProblemFilter: 'all',
+        aiLoading: false,
+        loadingInitial: true,
+        syncing: false,
+        spreadsheetUrl: '',
+        hasGeminiKey: false,
+        schoolConfig: {
+          schoolName: 'SMA NEGERI SI PERAK',
+          schoolLevel: 'SMA',
+          kopAuthority: KOP_AUTHORITY_CABDIN,
+          schoolNpsn: '12345678',
+          schoolAddress: 'Jl. Raya Bojonegoro No. 123, Bojonegoro - Jawa Timur',
+          academicYear: '2026/2027',
+          headmasterName: 'Drs. H. Mulyono, M.Pd.',
+          headmasterNip: '19660812 199003 1 007',
+          internalSupervisorName: 'Waka Kurikulum / Guru Senior',
+          internalSupervisorNip: '19780512 200501 1 009',
+          supervisorName: DEFAULT_SUPERVISOR_NAME,
+          supervisorNip: DEFAULT_SUPERVISOR_NIP,
+          twoStageValidation: true,
+        },
+        programConfig: {
+          templateId: 'klinis-standar',
+          fokusProgram: PROGRAM_TEMPLATE_OPTIONS[0].fokus,
+          semester: 'Semester Ganjil & Genap',
+          targetCapaian: PROGRAM_TEMPLATE_OPTIONS[0].target,
+          waktuPelaksanaan: PROGRAM_TEMPLATE_OPTIONS[0].waktu,
+          catatanPengawas: 'Supervisi dilaksanakan dengan pendekatan coaching non-judgmental untuk menguatkan kompetensi pedagogik guru.',
+        },
+        rubricSections: JSON.parse(JSON.stringify(DEFAULT_RUBRIC_SECTIONS)),
+        instrumentTitle: 'Standar Nasional & Deep Learning',
+        gurus: [],
+        supervisions: [],
+        followUps: [],
+      };
+
+      // =====================================================================
+      // UTILITAS & HELPER
+      // =====================================================================
+      function isAppsScriptEnv() {
+        return typeof google !== 'undefined' && google.script && google.script.run;
+      }
+
+      function esc(val) {
+        if (val === null || val === undefined) return '';
+        return String(val)
+          .replace(/&/g, '&amp;')
+          .replace(/</g, '&lt;')
+          .replace(/>/g, '&gt;')
+          .replace(/"/g, '&quot;')
+          .replace(/'/g, '&#39;');
+      }
+
+      function uuid() {
+        if (window.crypto && window.crypto.randomUUID) return window.crypto.randomUUID();
+        return 'id-' + Math.random().toString(36).slice(2, 10) + '-' + Date.now().toString(36);
+      }
+
+      function computeScoreStats(obsScores) {
+        var dist = { 1: 0, 2: 0, 3: 0, 4: 0 };
+        var values = [];
+        if (obsScores && typeof obsScores === 'object') {
+          Object.keys(obsScores).forEach(function (k) {
+            var v = Number(obsScores[k]);
+            if (v >= 1 && v <= 4) {
+              values.push(v);
+              dist[v] = (dist[v] || 0) + 1;
+            }
+          });
+        }
+        var sum = values.reduce(function (a, b) { return a + b; }, 0);
+        var avg = values.length > 0 ? sum / values.length : 0;
+        var category = 'Belum Dinilai';
+        if (avg >= 3.5) category = 'Sangat Baik';
+        else if (avg >= 2.75) category = 'Baik';
+        else if (avg >= 2.0) category = 'Cukup';
+        else if (avg > 0) category = 'Perlu Pembinaan';
+        return { avg: avg, category: category, dist: dist, count: values.length };
+      }
+
+      function countRubricItems(sections) {
+        return (sections || []).reduce(function (acc, s) {
+          return acc + ((s.items && s.items.length) || 0);
+        }, 0);
+      }
+
+      function derivedSchoolMeta() {
+        var cfg = state.schoolConfig;
+        var isDisdik = cfg.kopAuthority === KOP_AUTHORITY_KAB;
+        return {
+          isDinasPendidikan: isDisdik,
+          authorityName: isDisdik ? 'Dinas Pendidikan Kabupaten Bojonegoro' : 'Cabang Dinas Pendidikan Wilayah Bojonegoro',
+          authorityShort: isDisdik ? 'Disdik Kab. Bojonegoro' : 'Cabdindik Wil. Bojonegoro',
+          parentGov: isDisdik ? 'Pemerintah Kabupaten Bojonegoro' : 'Pemerintah Provinsi Jawa Timur',
+          parentGovUpper: isDisdik ? 'PEMERINTAH KABUPATEN BOJONEGORO' : 'PEMERINTAH PROVINSI JAWA TIMUR',
+        };
+      }
+
+      function createEmptyInstrument(guruId, guruNama) {
+        var cfg = state.schoolConfig;
+        return {
+          guruId: guruId || '',
+          namaGuru: guruNama || '',
+          nipGuru: '',
+          namaSekolah: cfg.schoolName,
+          alamatSekolah: cfg.schoolAddress,
+          namaKepala: cfg.headmasterName,
+          nipKepala: cfg.headmasterNip,
+          namaPengawas: cfg.internalSupervisorName || cfg.supervisorName,
+          nipPengawas: cfg.internalSupervisorNip || cfg.supervisorNip,
+          mapel: '',
+          kelas: '',
+          materi: '',
+          tglPra: '',
+          tglObs: '',
+          tglPasca: '',
+          praFields: { tujuan: '', area: '', strategi: '', media: '' },
+          praAI: '',
+          obsScores: {},
+          obsNotes: {},
+          obsAI: '',
+          pascaRefleksi: '',
+          pascaSanggah: '',
+          pascaRencana: '',
+          pascaAI: '',
+          rtl: { coaching: false, mentoring: false, workshop: false, lessonStudy: false, selfDevelopment: false },
+          analysisScore: '',
+          kekuatan: '',
+          perbaikan: '',
+          rekomendasi: '',
+          photos: [],
+          documents: [],
+        };
+      }
+
+      function showToast(text, type) {
+        var root = document.getElementById('toast-root');
+        if (!root) return;
+        var palette =
+          type === 'error'
+            ? 'bg-rose-600 text-white'
+            : type === 'info'
+            ? 'bg-slate-900 text-white'
+            : 'bg-emerald-600 text-white';
+        var el = document.createElement('div');
+        el.className = 'pointer-events-auto px-4 py-3 rounded-xl shadow-lg text-xs font-bold flex items-center gap-2 transition-all ' + palette;
+        el.textContent = text;
+        root.appendChild(el);
+        setTimeout(function () {
+          if (el.parentNode) el.parentNode.removeChild(el);
+        }, 3800);
+      }
+
+      function saveLocalBackup() {
+        try {
+          localStorage.setItem('siperak_gas_backup', JSON.stringify({
+            schoolConfig: state.schoolConfig,
+            programConfig: state.programConfig,
+            rubricSections: state.rubricSections,
+            instrumentTitle: state.instrumentTitle,
+            gurus: state.gurus,
+            supervisions: state.supervisions,
+            followUps: state.followUps,
+          }));
+        } catch (e) {}
+      }
+
+      function pushToServer(methodName, arg1, arg2) {
+        saveLocalBackup();
+        if (!isAppsScriptEnv()) return;
+        state.syncing = true;
+        var runner = google.script.run
+          .withSuccessHandler(function () {
+            state.syncing = false;
+          })
+          .withFailureHandler(function (err) {
+            state.syncing = false;
+            showToast('Gagal sinkronisasi ke Spreadsheet: ' + (err.message || err), 'error');
+          });
+        if (arg2 !== undefined) runner[methodName](arg1, arg2);
+        else if (arg1 !== undefined) runner[methodName](arg1);
+        else runner[methodName]();
+      }
+
+      function getSmartRecommendation(finding) {
+        var lower = String(finding || '').toLowerCase();
+        for (var i = 0; i < PROBLEM_CATEGORIES.length; i++) {
+          var cat = PROBLEM_CATEGORIES[i];
+          if (cat.keywords.some(function (kw) { return lower.indexOf(kw) >= 0; })) {
+            return 'Rekomendasi (' + cat.name + '): ' + cat.solusiIHT;
+          }
+        }
+        return 'Berdasarkan temuan "' + finding + '": Rekomendasikan pendampingan klinis terjadwal bersama supervisor atau rekan sejawat serta refleksi siklus mingguan.';
+      }
+
+      function syncCompletedSupervisionsToFollowUps() {
+        var added = [];
+        state.supervisions.forEach(function (sv) {
+          if (sv.status !== 'Selesai' && sv.status !== 'Tindak Lanjut' && !sv.instrument.perbaikan) return;
+          var guru = state.gurus.find(function (g) { return g.id === sv.instrument.guruId; });
+          var guruNama = (guru && guru.nama) || sv.instrument.namaGuru || 'Guru Terdaftar';
+          var exists = state.followUps.some(function (f) {
+            return f.guruNama.toLowerCase() === guruNama.toLowerCase() || f.id === 'tl-sv-' + sv.id;
+          });
+          if (!exists && sv.instrument.perbaikan) {
+            var finding = sv.instrument.perbaikan.slice(0, 50);
+            added.push({
+              id: 'tl-sv-' + sv.id,
+              guruNama: guruNama,
+              guruNip: sv.instrument.nipGuru || (guru && guru.nip) || '',
+              mapel: sv.instrument.mapel || (guru && guru.mapel) || '',
+              kelas: sv.instrument.kelas || '',
+              temuan: finding,
+              intervensi: sv.instrument.rekomendasi ? sv.instrument.rekomendasi.slice(0, 45) : 'Pendampingan Klinis',
+              status: sv.status === 'Selesai' ? 'Terealisasi' : 'Dipantau',
+              dampak: sv.status === 'Selesai' ? 'Meningkat' : 'Dipantau',
+              smartRekomendasi: getSmartRecommendation(finding),
+              sudahRefleksi: Boolean(sv.instrument.pascaRefleksi),
+              sudahTindakLanjut: sv.status === 'Selesai' || sv.status === 'Tindak Lanjut',
+              perubahanPraktik: sv.status === 'Selesai',
+              perluPendampingan: sv.status !== 'Selesai',
+              tglSupervisi: sv.instrument.tglObs || new Date().toISOString().split('T')[0],
+              catatan: sv.instrument.kekuatan || 'Catatan hasil supervisi klinis.',
+            });
+          }
+        });
+        if (added.length > 0) {
+          state.followUps = state.followUps.concat(added);
+          pushToServer('syncAllFollowUps', state.followUps);
+        }
+      }
+
+      // =====================================================================
+      // EKSPOR EXCEL, PDF, WORD, & PRINT
+      // =====================================================================
+      function downloadBlob(blob, filename) {
+        var url = URL.createObjectURL(blob);
+        var a = document.createElement('a');
+        a.href = url;
+        a.download = filename;
+        document.body.appendChild(a);
+        a.click();
+        document.body.removeChild(a);
+        setTimeout(function () { URL.revokeObjectURL(url); }, 1000);
+      }
+
+      function downloadGuruExcelTemplate() {
+        if (typeof XLSX === 'undefined') return showToast('Library Excel belum dimuat.', 'error');
+        var ws = XLSX.utils.json_to_sheet([
+          {
+            'Nama Guru': 'Budi Santoso, S.Pd.',
+            'NIP': '198501012010011001',
+            'Pangkat / Gol': 'Pembina / IVa',
+            'Mata Pelajaran': 'Matematika',
+            'Jenjang': state.schoolConfig.schoolLevel || 'SMA',
+            'Status': 'ASN',
+            'Kelas': 'X-A',
+          },
+        ]);
+        var wb = XLSX.utils.book_new();
+        XLSX.utils.book_append_sheet(wb, ws, 'Template_Guru');
+        XLSX.writeFile(wb, 'Template_Data_Guru_SIPERAK.xlsx');
+        showToast('Template Excel Data Guru berhasil diunduh.', 'success');
+      }
+
+      function downloadScheduleExcelTemplate() {
+        if (typeof XLSX === 'undefined') return showToast('Library Excel belum dimuat.', 'error');
+        var ws = XLSX.utils.json_to_sheet([
+          {
+            'Nama Guru': 'Budi Santoso, S.Pd.',
+            'NIP': '198501012010011001',
+            'Mata Pelajaran': 'Matematika',
+            'Kelas': 'X-1',
+            'Materi': 'Sistem Persamaan Linear',
+            'Tgl Pra-Obs': '2026-08-10',
+            'Tgl Observasi': '2026-08-12',
+            'Tgl Pasca-Obs': '2026-08-14',
+            'Status': 'Direncakan',
+          },
+        ]);
+        var wb = XLSX.utils.book_new();
+        XLSX.utils.book_append_sheet(wb, ws, 'Template_Jadwal');
+        XLSX.writeFile(wb, 'Template_Jadwal_Supervisi_SIPERAK.xlsx');
+        showToast('Template Excel Jadwal Supervisi berhasil diunduh.', 'success');
+      }
+
+      function exportWordDocument(title, htmlContent, filename) {
+        var header =
+          '<html xmlns:o="urn:schemas-microsoft-com:office:office" xmlns:w="urn:schemas-microsoft-com:office:word" xmlns="http://www.w3.org/TR/REC-html40">' +
+          '<head><meta charset="utf-8"><title>' + esc(title) + '</title>' +
+          '<style>body{font-family:Arial,sans-serif;font-size:11pt;line-height:1.45;} table{border-collapse:collapse;width:100%;margin:8px 0;} th,td{border:1px solid #334155;padding:6px;text-align:left;vertical-align:top;} th{background:#f1f5f9;font-weight:bold;}</style>' +
+          '</head><body>';
+        var footer = '</body></html>';
+        var blob = new Blob(['\ufeff' + header + htmlContent + footer], { type: 'application/msword' });
+        downloadBlob(blob, filename.endsWith('.doc') ? filename : filename + '.doc');
+        showToast('Dokumen Word "' + filename + '" berhasil diunduh.', 'success');
+      }
+
+      function exportSupervisionPdf(sv) {
+        if (!window.jspdf || !window.jspdf.jsPDF) {
+          return showToast('Library PDF belum tersedia.', 'error');
+        }
+        var jsPDF = window.jspdf.jsPDF;
+        var doc = new jsPDF({ orientation: 'portrait', unit: 'mm', format: 'a4' });
+        var meta = derivedSchoolMeta();
+        var cfg = state.schoolConfig;
+        var instr = sv.instrument;
+        var guru = state.gurus.find(function (g) { return g.id === instr.guruId; });
+        var guruNama = (guru && guru.nama) || instr.namaGuru || '-';
+        var stats = computeScoreStats(instr.obsScores);
+        var pageW = doc.internal.pageSize.getWidth();
+
+        doc.setFont('helvetica', 'bold');
+        doc.setFontSize(10);
+        doc.text(meta.parentGovUpper, pageW / 2, 14, { align: 'center' });
+        doc.setFontSize(11);
+        doc.text(cfg.kopAuthority, pageW / 2, 19, { align: 'center' });
+        doc.setFontSize(13);
+        doc.text(cfg.schoolName.toUpperCase(), pageW / 2, 25, { align: 'center' });
+        doc.setFont('helvetica', 'normal');
+        doc.setFontSize(8);
+        doc.text(cfg.schoolAddress + ' | NPSN: ' + cfg.schoolNpsn, pageW / 2, 30, { align: 'center' });
+        doc.setLineWidth(0.7);
+        doc.line(14, 33, pageW - 14, 33);
+
+        doc.setFont('helvetica', 'bold');
+        doc.setFontSize(11);
+        doc.text('LAPORAN HASIL SUPERVISI KLINIS AKADEMIK', pageW / 2, 41, { align: 'center' });
+        doc.setFont('helvetica', 'normal');
+        doc.setFontSize(9);
+        doc.text('Tahun Pelajaran ' + cfg.academicYear + ' | Instrumen: ' + state.instrumentTitle, pageW / 2, 46, { align: 'center' });
+
+        doc.autoTable({
+          startY: 51,
+          theme: 'grid',
+          styles: { fontSize: 8.5, cellPadding: 2.5 },
+          body: [
+            ['Nama Guru', guruNama, 'Mata Pelajaran', instr.mapel || '-'],
+            ['NIP Guru', instr.nipGuru || (guru && guru.nip) || '-', 'Kelas / Fase', instr.kelas || '-'],
+            ['Topik / Materi', instr.materi || '-', 'Tgl Observasi', instr.tglObs || '-'],
+            ['Skor Rata-Rata', stats.avg.toFixed(2) + ' / 4.00', 'Predikat Kinerja', stats.category],
+          ],
+        });
+
+        var rubricRows = [];
+        state.rubricSections.forEach(function (sec) {
+          rubricRows.push([{ content: sec.title, colSpan: 3, styles: { fillColor: [239, 246, 255], fontStyle: 'bold' } }]);
+          sec.items.forEach(function (item) {
+            var sc = instr.obsScores[item.id] || '-';
+            var note = instr.obsNotes[item.id] || '-';
+            rubricRows.push([item.label, String(sc), note]);
+          });
+        });
+
+        doc.autoTable({
+          startY: doc.lastAutoTable.finalY + 5,
+          theme: 'grid',
+          styles: { fontSize: 8, cellPadding: 2.5 },
+          headStyles: { fillColor: [30, 58, 138], textColor: 255 },
+          head: [['Aspek & Indikator Pengamatan', 'Skor (1-4)', 'Catatan Lapangan']],
+          body: rubricRows,
+        });
+
+        doc.autoTable({
+          startY: doc.lastAutoTable.finalY + 5,
+          theme: 'grid',
+          styles: { fontSize: 8.5, cellPadding: 2.5 },
+          body: [
+            ['Refleksi Guru', instr.pascaRefleksi || '-'],
+            ['Sanggahan / Hak Jawab Guru', instr.pascaSanggah || '-'],
+            ['Kekuatan Utama', instr.kekuatan || '-'],
+            ['Area Perbaikan', instr.perbaikan || '-'],
+            ['Rekomendasi Tindak Lanjut', instr.rekomendasi || '-'],
+          ],
+        });
+
+        var signY = doc.lastAutoTable.finalY + 12;
+        if (signY > 255) {
+          doc.addPage();
+          signY = 20;
+        }
+        doc.setFontSize(8.5);
+        doc.text('Mengetahui,', 40, signY, { align: 'center' });
+        doc.text('Supervisor / Pengawas,', pageW - 45, signY, { align: 'center' });
+        doc.text('Kepala ' + cfg.schoolName, 40, signY + 4, { align: 'center' });
+        doc.text(cfg.isDinasPendidikan ? 'Pengawas Disdik Bojonegoro' : 'Pengawas SMA Cabdindik Bojonegoro', pageW - 45, signY + 4, { align: 'center' });
+        doc.setFont('helvetica', 'bold');
+        doc.text(cfg.headmasterName, 40, signY + 22, { align: 'center' });
+        doc.text(cfg.supervisorName, pageW - 45, signY + 22, { align: 'center' });
+        doc.setFont('helvetica', 'normal');
+        doc.text('NIP. ' + cfg.headmasterNip, 40, signY + 26, { align: 'center' });
+        doc.text('NIP. ' + cfg.supervisorNip, pageW - 45, signY + 26, { align: 'center' });
+
+        var safeName = 'Laporan_Supervisi_' + guruNama.replace(/[^a-zA-Z0-9]/g, '_') + '.pdf';
+        doc.save(safeName);
+        showToast('PDF "' + safeName + '" berhasil diunduh.', 'success');
+      }
+
+      // =====================================================================
+      // MODAL DIALOG HELPER
+      // =====================================================================
+      function closeModal() {
+        var root = document.getElementById('modal-root');
+        if (root) root.innerHTML = '';
+      }
+
+      function openModal(html) {
+        var root = document.getElementById('modal-root');
+        if (!root) return;
+        root.innerHTML =
+          '<div id="modal-backdrop" class="fixed inset-0 z-50 bg-gray-900/50 backdrop-blur-xs flex items-center justify-center p-4 overflow-y-auto">' +
+          html +
+          '</div>';
+        if (window.lucide) lucide.createIcons();
+        var backdrop = document.getElementById('modal-backdrop');
+        backdrop.addEventListener('click', function (e) {
+          if (e.target === backdrop) closeModal();
+        });
+      }
+
+      // =====================================================================
+      // RENDER SHELL UTAMA (SIDEBAR + HEADER + KONTEN + FOOTER)
+      // =====================================================================
+      function render() {
+        var appEl = document.getElementById('app');
+        if (!appEl) return;
+
+        if (state.loadingInitial) {
+          appEl.innerHTML =
+            '<div class="m-auto flex flex-col items-center gap-3 text-gray-500">' +
+            '<div class="w-10 h-10 border-3 border-brand-600 border-t-transparent rounded-full animate-spin"></div>' +
+            '<p class="text-sm font-bold text-gray-700">Menghubungkan SI PERAK ke Google Apps Script...</p>' +
+            '</div>';
+          return;
+        }
+
+        var meta = derivedSchoolMeta();
+        var cfg = state.schoolConfig;
+        var currentTabObj = TAB_ITEMS.find(function (t) { return t.id === state.activeTab; }) || TAB_ITEMS[0];
+
+        var navHtml = TAB_ITEMS.map(function (item) {
+          var active = state.activeTab === item.id;
+          return (
+            '<button type="button" data-nav="' + item.id + '" class="w-full flex items-center gap-3 px-4 py-3 rounded-xl transition-all text-left cursor-pointer ' +
+            (active ? 'bg-brand-50 text-brand-700 font-semibold' : 'text-gray-500 hover:bg-gray-50 hover:text-gray-900') +
+            '">' +
+            '<i data-lucide="' + item.icon + '" class="w-5 h-5 ' + (active ? 'text-brand-600' : 'text-gray-400') + '"></i>' +
+            '<span class="text-sm flex-1">' + esc(item.label) + '</span>' +
+            (active ? '<span class="w-1.5 h-1.5 bg-brand-600 rounded-full"></span>' : '') +
+            '</button>'
+          );
+        }).join('');
+
+        var sidebarHtml =
+          '<aside class="w-64 bg-white border-r border-gray-200 flex flex-col no-print h-screen sticky top-0 shrink-0 hidden md:flex">' +
+          '  <div class="p-6 border-b border-gray-100 space-y-4">' +
+          '    <div class="flex items-center gap-3">' +
+          '      <div class="w-10 h-10 bg-brand-600 rounded-xl flex items-center justify-center text-white shadow-lg shadow-brand-500/20">' +
+          '        <i data-lucide="calendar-check" class="w-6 h-6"></i>' +
+          '      </div>' +
+          '      <div>' +
+          '        <h1 class="font-display font-bold text-xl leading-tight">SI PERAK</h1>' +
+          '        <p class="text-[10px] text-gray-500 uppercase tracking-widest font-semibold italic">Apps Script Edition</p>' +
+          '      </div>' +
+          '    </div>' +
+          '    <div class="px-3 py-1.5 bg-gray-50 border border-gray-100 rounded-lg">' +
+          '      <p class="text-[9px] font-bold text-gray-400 uppercase tracking-[0.2em]">Tahun Akademik</p>' +
+          '      <p class="text-xs font-bold text-brand-700">' + esc(cfg.academicYear.replace('/', ' / ')) + '</p>' +
+          '    </div>' +
+          '  </div>' +
+          '  <nav class="flex-1 p-4 space-y-1 overflow-y-auto">' + navHtml + '</nav>' +
+          '  <div class="p-3 border-t border-gray-100 bg-gray-50/70">' +
+          '    <div class="bg-white rounded-xl p-3 border border-gray-200 space-y-2">' +
+          '      <div class="flex items-center gap-2.5">' +
+          '        <div class="w-9 h-9 rounded-xl bg-gradient-to-br from-brand-600 to-indigo-700 text-white flex items-center justify-center font-black text-xs shrink-0">AFC</div>' +
+          '        <div class="min-w-0">' +
+          '          <span class="text-[8.5px] font-black text-emerald-700 bg-emerald-50 px-1.5 py-0.5 rounded border border-emerald-200 uppercase">Hak Cipta Resmi</span>' +
+          '          <p class="text-xs font-bold text-gray-900 truncate mt-0.5">' + DEFAULT_SUPERVISOR_NAME + '</p>' +
+          '          <p class="text-[10px] text-gray-500 truncate">' + esc(meta.authorityShort) + '</p>' +
+          '        </div>' +
+          '      </div>' +
+          '      <button type="button" data-nav="pengaturan-sekolah" class="w-full py-1.5 px-2 text-[10px] font-bold text-gray-600 hover:text-brand-700 flex items-center justify-center gap-1.5 bg-gray-50 hover:bg-brand-50 border border-gray-200 rounded-lg cursor-pointer">' +
+          '        <i data-lucide="settings" class="w-3 h-3"></i><span>PENGATURAN SEKOLAH</span>' +
+          '      </button>' +
+          '    </div>' +
+          '  </div>' +
+          '</aside>';
+
+        var mobileTabsHtml =
+          '<div class="md:hidden bg-white border-b border-gray-200 px-3 py-2 flex gap-1.5 overflow-x-auto no-print">' +
+          TAB_ITEMS.map(function (t) {
+            var active = state.activeTab === t.id;
+            return (
+              '<button type="button" data-nav="' + t.id + '" class="px-3 py-1.5 rounded-lg text-xs font-bold whitespace-nowrap cursor-pointer ' +
+              (active ? 'bg-brand-600 text-white' : 'bg-gray-100 text-gray-600') + '">' +
+              esc(t.label) + '</button>'
+            );
+          }).join('') +
+          '</div>';
+
+        var headerHtml =
+          '<header class="h-16 bg-white border-b border-gray-200 flex items-center justify-between px-6 md:px-8 sticky top-0 z-10 no-print">' +
+          '  <div class="flex items-center gap-2 text-sm text-gray-500">' +
+          '    <span>Sistem</span><i data-lucide="chevron-right" class="w-3.5 h-3.5"></i>' +
+          '    <span class="font-semibold text-gray-900">' + esc(currentTabObj.label) + '</span>' +
+          '  </div>' +
+          '  <div class="flex items-center gap-3">' +
+          '    <div class="hidden lg:flex items-center gap-2 px-3 py-1 bg-amber-50 border border-amber-200 rounded-full text-xs font-semibold text-amber-900">' +
+          '      <i data-lucide="award" class="w-3.5 h-3.5 text-amber-600"></i>' +
+          '      <span>Hak Cipta: <strong>' + DEFAULT_SUPERVISOR_NAME + '</strong></span>' +
+          '    </div>' +
+          (state.spreadsheetUrl
+            ? '<a href="' + esc(state.spreadsheetUrl) + '" target="_blank" rel="noopener noreferrer" class="hidden sm:inline-flex items-center gap-1.5 px-3 py-1.5 bg-emerald-50 border border-emerald-200 text-emerald-800 rounded-lg text-xs font-bold hover:bg-emerald-100">' +
+              '<i data-lucide="sheet" class="w-3.5 h-3.5"></i><span>Buka Sheet DB</span></a>'
+            : '') +
+          '  </div>' +
+          '</header>';
+
+        var contentHtml = '';
+        if (state.activeTab === 'dashboard') contentHtml = renderDashboard();
+        else if (state.activeTab === 'data-guru') contentHtml = renderDataGuru();
+        else if (state.activeTab === 'dokumen-perangkat') contentHtml = renderDokumenPerangkat();
+        else if (state.activeTab === 'program') contentHtml = renderProgramSupervisi();
+        else if (state.activeTab === 'instrumen') contentHtml = renderInstrumen();
+        else if (state.activeTab === 'laporan') contentHtml = renderLaporanHasil();
+        else if (state.activeTab === 'tindak-lanjut') contentHtml = renderTindakLanjut();
+        else if (state.activeTab === 'pengaturan-sekolah') contentHtml = renderPengaturanSekolah();
+
+        var footerHtml =
+          '<footer class="py-5 px-8 border-t border-gray-200 bg-white text-center no-print">' +
+          '  <p class="text-xs text-gray-500">© ' + new Date().getFullYear() + ' <strong>SI PERAK</strong> — Sistem Informasi Supervisi Akademik Kurikulum Nasional. Karya <strong>' + DEFAULT_SUPERVISOR_NAME + '</strong> (' + esc(meta.authorityName) + ').</p>' +
+          '</footer>';
+
+        appEl.innerHTML =
+          sidebarHtml +
+          '<div class="flex-1 flex flex-col min-w-0">' +
+          headerHtml +
+          mobileTabsHtml +
+          '<main class="flex-1 p-6 md:p-8 max-w-7xl w-full mx-auto">' + contentHtml + '</main>' +
+          footerHtml +
+          '</div>';
+
+        if (window.lucide) lucide.createIcons();
+        bindEvents();
+      }
+
+      // =====================================================================
+      // 1. DASHBOARD
+      // =====================================================================
+      function renderDashboard() {
+        var cfg = state.schoolConfig;
+        var meta = derivedSchoolMeta();
+        var selesai = state.supervisions.filter(function (sv) { return sv.status === 'Selesai'; }).length;
+        var proses = state.supervisions.filter(function (sv) { return sv.status !== 'Selesai' && sv.status !== 'Direncakan'; }).length;
+        var rencana = state.supervisions.filter(function (sv) { return sv.status === 'Direncakan'; }).length;
+
+        var impact = computeImpactStats();
+
+        var recentRows = state.supervisions.length === 0
+          ? '<div class="py-12 text-center text-sm text-gray-400 italic">Belum ada aktivitas supervisi terbaru.</div>'
+          : state.supervisions.slice(0, 5).map(function (sv) {
+              var g = state.gurus.find(function (x) { return x.id === sv.instrument.guruId; });
+              var nama = (g && g.nama) || sv.instrument.namaGuru || 'Guru';
+              var st = computeScoreStats(sv.instrument.obsScores);
+              return (
+                '<div class="flex items-center justify-between gap-4 p-4 rounded-xl border border-gray-100 hover:bg-gray-50">' +
+                '  <div class="min-w-0 flex-1">' +
+                '    <p class="text-sm font-bold text-gray-900 truncate">' + esc(nama) + '</p>' +
+                '    <p class="text-xs text-gray-500 truncate">' + esc(sv.instrument.mapel || 'Mapel Belum Diisi') + ' • ' + esc(sv.instrument.kelas || '-') + '</p>' +
+                '  </div>' +
+                '  <div class="text-right shrink-0">' +
+                '    <p class="text-xs font-bold text-brand-600">Skor: ' + (st.count ? st.avg.toFixed(2) : '-') + '</p>' +
+                '    <span class="text-[10px] px-2 py-0.5 rounded-full font-bold bg-brand-100 text-brand-700">' + esc(sv.status) + '</span>' +
+                '  </div>' +
+                '  <div class="flex items-center gap-1.5 shrink-0">' +
+                '    <button type="button" data-open-sv="' + esc(sv.id) + '" class="px-3 py-1.5 bg-brand-50 hover:bg-brand-100 text-brand-700 rounded-lg text-xs font-bold cursor-pointer">Buka</button>' +
+                '    <button type="button" data-del-sv="' + esc(sv.id) + '" class="px-2.5 py-1.5 bg-rose-50 hover:bg-rose-100 text-rose-600 rounded-lg text-xs font-bold cursor-pointer">Hapus</button>' +
+                '  </div>' +
+                '</div>'
+              );
+            }).join('');
+
+        return (
+          '<div class="space-y-8">' +
+          '  <div class="flex flex-col md:flex-row md:items-center justify-between gap-4">' +
+          '    <div>' +
+          '      <div class="flex flex-wrap gap-2 mb-2">' +
+          '        <span class="px-3 py-1 rounded-lg bg-brand-50 border border-brand-200 text-brand-700 text-xs font-bold">Tahun Akademik: ' + esc(cfg.academicYear) + '</span>' +
+          '        <span class="px-3 py-1 rounded-lg bg-slate-100 border border-slate-200 text-slate-700 text-xs font-semibold">' + esc(cfg.schoolName) + ' (' + esc(cfg.schoolLevel) + ')</span>' +
+          '        <span class="px-3 py-1 rounded-lg bg-emerald-50 border border-emerald-200 text-emerald-800 text-xs font-bold">' + esc(meta.authorityName) + '</span>' +
+          '      </div>' +
+          '      <h2 class="text-3xl font-display font-bold text-gray-900">SI PERAK — Supervisi Akademik</h2>' +
+          '      <p class="text-gray-600 text-sm mt-1">Instrumen Supervisi Klinis Berbasis Kurikulum Nasional &amp; Pembelajaran Mendalam (Deep Learning).</p>' +
+          '    </div>' +
+          '    <button type="button" data-nav="tindak-lanjut" class="px-5 py-3 bg-gradient-to-r from-brand-600 to-indigo-700 text-white rounded-xl text-xs font-extrabold uppercase tracking-wider shadow-lg cursor-pointer">TINDAK LANJUT SUPERVISI</button>' +
+          '  </div>' +
+
+          '  <div class="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-4 gap-5">' +
+          statCard('Database Guru', state.gurus.length, 'users', 'bg-blue-50 text-blue-600') +
+          statCard('Supervisi Selesai', selesai, 'check-circle-2', 'bg-emerald-50 text-emerald-600') +
+          statCard('Dalam Pantauan', proses, 'clock', 'bg-amber-50 text-amber-600') +
+          statCard('Terjadwal', rencana, 'calendar', 'bg-gray-100 text-gray-500') +
+          '  </div>' +
+
+          '  <div class="bg-gradient-to-br from-slate-900 via-brand-950 to-indigo-950 rounded-2xl p-6 text-white shadow-md">' +
+          '    <div class="flex flex-col sm:flex-row sm:items-center justify-between gap-3 border-b border-white/10 pb-4">' +
+          '      <div><h3 class="font-display font-bold text-base uppercase tracking-wider">Supervision Impact Dashboard</h3><p class="text-xs text-slate-300">Pantauan dampak intervensi klinis terhadap pembelajaran.</p></div>' +
+          '      <button type="button" data-nav="tindak-lanjut" class="px-3.5 py-2 bg-white text-slate-900 rounded-xl text-xs font-bold cursor-pointer">Buka Dashboard Mutu</button>' +
+          '    </div>' +
+          '    <div class="grid grid-cols-2 sm:grid-cols-5 gap-3 pt-4">' +
+          impactTile('Disupervisi', impact.totalDisupervisi, 'Sasaran supervisi', 'text-white') +
+          impactTile('Sudah Refleksi', impact.sudahRefleksi, 'Pasca-observasi', 'text-emerald-400') +
+          impactTile('Tindak Lanjut', impact.sudahTindakLanjut, 'Intervensi aktif', 'text-indigo-400') +
+          impactTile('Perubahan Praktik', impact.perubahanPraktik, 'Meningkat', 'text-emerald-300') +
+          impactTile('Perlu Pendampingan', impact.perluPendampingan, 'Dipantau / Coaching', 'text-amber-300') +
+          '    </div>' +
+          '  </div>' +
+
+          '  <div class="grid grid-cols-1 lg:grid-cols-3 gap-6">' +
+          '    <div class="lg:col-span-2 bg-white rounded-2xl p-6 border border-gray-100 shadow-sm">' +
+          '      <div class="flex justify-between items-center mb-4">' +
+          '        <h3 class="font-display font-bold text-lg">Aktivitas Supervisi Klinis Terbaru</h3>' +
+          '        <button type="button" data-nav="instrumen" class="text-xs font-bold text-brand-600 underline cursor-pointer">KELOLA JADWAL</button>' +
+          '      </div>' +
+          '      <div class="space-y-3">' + recentRows + '</div>' +
+          '    </div>' +
+          '    <div class="space-y-4">' +
+          '      <div class="bg-emerald-700 rounded-2xl p-6 text-white">' +
+          '        <h3 class="text-lg font-display font-bold mb-1">Laporan Hasil Supervisi</h3>' +
+          '        <p class="text-xs text-emerald-100 mb-4">Unduh &amp; cetak laporan supervisi klinis format PDF A4 dan Word.</p>' +
+          '        <button type="button" data-nav="laporan" class="w-full py-2.5 bg-white text-emerald-800 rounded-xl text-xs font-bold uppercase cursor-pointer">Buka Laporan Hasil</button>' +
+          '      </div>' +
+          '      <div class="bg-brand-700 rounded-2xl p-6 text-white">' +
+          '        <h3 class="text-lg font-display font-bold mb-1">Program Kerja Supervisi</h3>' +
+          '        <p class="text-xs text-brand-100 mb-4">Kurikulum Nasional &amp; Pembelajaran Mendalam (Deep Learning).</p>' +
+          '        <button type="button" data-nav="program" class="w-full py-2.5 bg-white text-brand-700 rounded-xl text-xs font-bold uppercase cursor-pointer">Baca Program Kerja</button>' +
+          '      </div>' +
+          '    </div>' +
+          '  </div>' +
+          '</div>'
+        );
+      }
+
+      function statCard(label, val, icon, color) {
+        return (
+          '<div class="bg-white p-5 rounded-2xl border border-gray-100 shadow-sm flex items-center justify-between">' +
+          '  <div><p class="text-xs font-bold text-gray-400 uppercase tracking-wider mb-1">' + esc(label) + '</p>' +
+          '  <p class="text-3xl font-display font-bold text-gray-900">' + esc(val) + '</p></div>' +
+          '  <div class="w-12 h-12 rounded-2xl flex items-center justify-center ' + color + '"><i data-lucide="' + icon + '" class="w-6 h-6"></i></div>' +
+          '</div>'
+        );
+      }
+
+      function impactTile(label, val, sub, textColor) {
+        return (
+          '<div class="bg-white/5 rounded-xl p-3 border border-white/10">' +
+          '  <p class="text-[10px] uppercase font-bold text-slate-300">' + esc(label) + '</p>' +
+          '  <p class="text-2xl font-display font-bold mt-1 ' + textColor + '">' + esc(val) + '</p>' +
+          '  <p class="text-[10px] text-slate-400 mt-0.5">' + esc(sub) + '</p>' +
+          '</div>'
+        );
+      }
+
+      function computeImpactStats() {
+        var disupervisi = new Set(), refleksi = new Set(), tindakLanjut = new Set(), praktik = new Set(), pendampingan = new Set();
+        state.supervisions.forEach(function (sv) {
+          var g = state.gurus.find(function (x) { return x.id === sv.instrument.guruId; });
+          var key = ((g && g.nama) || sv.instrument.namaGuru || sv.instrument.guruId || '').trim().toLowerCase();
+          if (!key) return;
+          var hasScores = Object.keys(sv.instrument.obsScores || {}).length > 0;
+          var hasRef = Boolean((sv.instrument.pascaRefleksi || '').trim());
+          if (sv.status !== 'Direncakan' || hasScores || hasRef) disupervisi.add(key);
+          if (hasRef || ['Pasca-Observasi', 'Tindak Lanjut', 'Selesai'].indexOf(sv.status) >= 0) refleksi.add(key);
+          var hasRtl = sv.instrument.rtl && Object.values(sv.instrument.rtl).some(Boolean);
+          if (sv.status === 'Tindak Lanjut' || sv.status === 'Selesai' || hasRtl) tindakLanjut.add(key);
+          var avg = computeScoreStats(sv.instrument.obsScores).avg;
+          if (sv.status === 'Selesai' && avg >= 3) praktik.add(key);
+          else if (sv.status === 'Tindak Lanjut' || (sv.status === 'Pasca-Observasi' && avg > 0 && avg < 3)) pendampingan.add(key);
+        });
+        state.followUps.forEach(function (f) {
+          var key = (f.guruNama || '').trim().toLowerCase();
+          if (!key) return;
+          disupervisi.add(key);
+          if (f.sudahRefleksi) refleksi.add(key);
+          if (f.sudahTindakLanjut) tindakLanjut.add(key);
+          if (f.perubahanPraktik || f.dampak === 'Meningkat') praktik.add(key);
+          if (f.perluPendampingan || f.dampak === 'Dipantau' || f.dampak === 'Perlu Pendampingan') pendampingan.add(key);
+        });
+        return {
+          totalDisupervisi: disupervisi.size,
+          sudahRefleksi: refleksi.size,
+          sudahTindakLanjut: tindakLanjut.size,
+          perubahanPraktik: praktik.size,
+          perluPendampingan: pendampingan.size,
+        };
+      }
+
+      // =====================================================================
+      // 2. DATA GURU
+      // =====================================================================
+      function renderDataGuru() {
+        var q = state.guruSearch.toLowerCase();
+        var filtered = state.gurus.filter(function (g) {
+          var matchQ = !q || g.nama.toLowerCase().indexOf(q) >= 0 || (g.nip || '').indexOf(q) >= 0 || (g.mapel || '').toLowerCase().indexOf(q) >= 0;
+          var matchJ = state.guruJenjangFilter === 'ALL' || (g.jenjang || 'SMA') === state.guruJenjangFilter;
+          return matchQ && matchJ;
+        });
+
+        var rowsHtml = filtered.length === 0
+          ? '<tr><td colspan="6" class="py-14 text-center text-sm text-gray-400 italic">Belum ada data guru yang sesuai. Klik "+ Tambah Guru" atau Import Excel.</td></tr>'
+          : filtered.map(function (g) {
+              var sv = state.supervisions.find(function (s) { return s.instrument.guruId === g.id; });
+              return (
+                '<tr class="hover:bg-gray-50 border-b border-gray-100 text-sm">' +
+                '  <td class="px-5 py-3.5"><p class="font-bold text-gray-900">' + esc(g.nama) + '</p><p class="text-xs text-gray-500">NIP. ' + esc(g.nip || '-') + '</p></td>' +
+                '  <td class="px-4 py-3.5 text-gray-700">' + esc(g.mapel) + (g.kelas ? ' <span class="text-xs text-gray-400">(' + esc(g.kelas) + ')</span>' : '') + '</td>' +
+                '  <td class="px-4 py-3.5"><span class="px-2 py-0.5 rounded-full text-xs font-bold bg-emerald-50 text-emerald-700 border border-emerald-200">' + esc(g.jenjang || state.schoolConfig.schoolLevel) + '</span></td>' +
+                '  <td class="px-4 py-3.5"><span class="px-2 py-0.5 rounded-full text-xs font-bold bg-blue-50 text-blue-700 border border-blue-200">' + esc(g.status || 'ASN') + '</span></td>' +
+                '  <td class="px-4 py-3.5 text-xs font-semibold text-gray-600">' + esc(sv ? sv.status : 'Belum Terjadwal') + '</td>' +
+                '  <td class="px-5 py-3.5 text-right space-x-1.5 whitespace-nowrap">' +
+                '    <button type="button" data-start-sv-guru="' + esc(g.id) + '" class="px-3 py-1.5 bg-brand-600 text-white rounded-lg text-xs font-bold cursor-pointer hover:bg-brand-700">Supervisi</button>' +
+                '    <button type="button" data-edit-guru="' + esc(g.id) + '" class="px-2.5 py-1.5 bg-gray-100 text-gray-700 rounded-lg text-xs font-bold cursor-pointer hover:bg-gray-200">Edit</button>' +
+                '    <button type="button" data-del-guru="' + esc(g.id) + '" class="px-2.5 py-1.5 bg-rose-50 text-rose-600 rounded-lg text-xs font-bold cursor-pointer hover:bg-rose-100">Hapus</button>' +
+                '  </td>' +
+                '</tr>'
+              );
+            }).join('');
+
+        return (
+          '<div class="space-y-6">' +
+          '  <div class="flex flex-col md:flex-row md:items-center justify-between gap-4">' +
+          '    <div><h2 class="text-2xl font-display font-bold text-gray-900">Data Guru Sasaran Supervisi</h2><p class="text-sm text-gray-500">Kelola database pendidik, impor Excel, dan jadwalkan sesi supervisi.</p></div>' +
+          '    <div class="flex flex-wrap gap-2">' +
+          '      <button type="button" id="btn-dl-guru-tpl" class="px-3.5 py-2 bg-white border border-gray-200 rounded-xl text-xs font-bold text-gray-700 hover:bg-gray-50 cursor-pointer">Template Excel</button>' +
+          '      <label class="px-3.5 py-2 bg-emerald-50 border border-emerald-200 rounded-xl text-xs font-bold text-emerald-700 hover:bg-emerald-100 cursor-pointer">Import Excel<input type="file" id="input-import-guru" accept=".xlsx,.xls" class="hidden" /></label>' +
+          '      <button type="button" id="btn-add-guru" class="px-4 py-2 bg-brand-600 hover:bg-brand-700 text-white rounded-xl text-xs font-bold cursor-pointer shadow-sm">+ Tambah Guru</button>' +
+          '    </div>' +
+          '  </div>' +
+          '  <div class="bg-white rounded-2xl border border-gray-200 shadow-sm overflow-hidden">' +
+          '    <div class="p-4 border-b border-gray-100 flex flex-wrap gap-3 items-center justify-between">' +
+          '      <input type="text" id="guru-search-input" value="' + esc(state.guruSearch) + '" placeholder="Cari nama, NIP, atau mapel..." class="px-3.5 py-2 bg-gray-50 border border-gray-200 rounded-xl text-sm w-full sm:w-72" />' +
+          '      <select id="guru-jenjang-select" class="px-3 py-2 bg-gray-50 border border-gray-200 rounded-xl text-xs font-bold">' +
+          '        <option value="ALL">Semua Jenjang</option>' +
+          JENJANG_OPTIONS.map(function (j) { return '<option value="' + j.id + '" ' + (state.guruJenjangFilter === j.id ? 'selected' : '') + '>' + j.label + '</option>'; }).join('') +
+          '      </select>' +
+          '    </div>' +
+          '    <div class="overflow-x-auto"><table class="w-full text-left"><thead class="bg-gray-50 border-b border-gray-200 text-xs uppercase text-gray-500"><tr><th class="px-5 py-3">Nama &amp; NIP</th><th class="px-4 py-3">Mapel / Kelas</th><th class="px-4 py-3">Jenjang</th><th class="px-4 py-3">Status</th><th class="px-4 py-3">Progres Supervisi</th><th class="px-5 py-3 text-right">Aksi</th></tr></thead><tbody>' + rowsHtml + '</tbody></table></div>' +
+          '  </div>' +
+          '</div>'
+        );
+      }
+
+      // =====================================================================
+      // 3. DOKUMEN PERANGKAT
+      // =====================================================================
+      function renderDokumenPerangkat() {
+        var allDocs = [];
+        state.supervisions.forEach(function (sv) {
+          var g = state.gurus.find(function (x) { return x.id === sv.instrument.guruId; });
+          var guruNama = (g && g.nama) || sv.instrument.namaGuru || '-';
+          (sv.instrument.documents || []).forEach(function (doc) {
+            allDocs.push({ doc: doc, guruNama: guruNama, mapel: sv.instrument.mapel, svId: sv.id });
+          });
+        });
+
+        var cats = [
+          { name: 'Modul Ajar / RPP', count: allDocs.filter(function (d) { return d.doc.stage === 'modul' || d.doc.stage === 'pra'; }).length },
+          { name: 'Alur Tujuan Pembelajaran (ATP)', count: allDocs.filter(function (d) { return (d.doc.name || '').toLowerCase().indexOf('atp') >= 0; }).length },
+          { name: 'Lembar Observasi / Instrumen', count: allDocs.filter(function (d) { return d.doc.stage === 'observasi'; }).length },
+          { name: 'Total Perangkat Terunggah', count: allDocs.length },
+        ];
+
+        return (
+          '<div class="space-y-6">' +
+          '  <div><h2 class="text-2xl font-display font-bold text-gray-900">Dokumen Perangkat Ajar</h2><p class="text-sm text-gray-500">Verifikasi kelengkapan administrasi perangkat ajar guru Tahun Pelajaran ' + esc(state.schoolConfig.academicYear) + '.</p></div>' +
+          '  <div class="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-4 gap-5">' +
+          cats.map(function (c) {
+            return (
+              '<div class="bg-white p-5 rounded-2xl border border-gray-100 shadow-sm space-y-2">' +
+              '  <p class="font-bold text-sm text-gray-900">' + esc(c.name) + '</p>' +
+              '  <p class="text-2xl font-display font-bold text-brand-600">' + c.count + '</p>' +
+              '  <span class="inline-block text-[10px] px-2 py-0.5 rounded-full font-bold bg-gray-100 text-gray-600">' + (c.count > 0 ? 'Tersedia' : 'Belum Ada') + '</span>' +
+              '</div>'
+            );
+          }).join('') +
+          '  </div>' +
+          '  <div class="bg-white rounded-2xl border border-gray-200 shadow-sm overflow-hidden">' +
+          '    <div class="p-5 border-b border-gray-100 font-display font-bold">Daftar Unggahan Guru</div>' +
+          (allDocs.length === 0
+            ? '<div class="py-16 text-center text-sm text-gray-400 italic">Belum ada dokumen perangkat ajar yang diunggah pada sesi supervisi.</div>'
+            : '<div class="divide-y divide-gray-100">' + allDocs.map(function (item) {
+                return (
+                  '<div class="p-4 flex items-center justify-between gap-4 hover:bg-gray-50">' +
+                  '  <div><p class="text-sm font-bold text-gray-900">' + esc(item.doc.name) + '</p><p class="text-xs text-gray-500">' + esc(item.guruNama) + ' • ' + esc(item.mapel || '-') + ' • Tahap: ' + esc(item.doc.stage) + '</p></div>' +
+                  '  <button type="button" data-open-sv="' + esc(item.svId) + '" class="px-3 py-1.5 bg-brand-50 text-brand-700 rounded-lg text-xs font-bold cursor-pointer">Buka Sesi</button>' +
+                  '</div>'
+                );
+              }).join('') + '</div>') +
+          '  </div>' +
+          '</div>'
+        );
+      }
+
+      // =====================================================================
+      // 4. PROGRAM SUPERVISI
+      // =====================================================================
+      function renderProgramSupervisi() {
+        var cfg = state.schoolConfig;
+        var meta = derivedSchoolMeta();
+        var pc = state.programConfig;
+
+        var tplCards = PROGRAM_TEMPLATE_OPTIONS.map(function (t) {
+          var active = pc.templateId === t.id;
+          return (
+            '<button type="button" data-select-prog-tpl="' + t.id + '" class="text-left p-4 rounded-xl border transition-all cursor-pointer ' +
+            (active ? 'border-brand-600 bg-brand-50 ring-2 ring-brand-500/20' : 'border-gray-200 bg-white hover:border-brand-300') + '">' +
+            '  <span class="text-[10px] font-bold uppercase px-2 py-0.5 rounded bg-white border border-gray-200 text-brand-700">' + esc(t.badge) + '</span>' +
+            '  <p class="font-bold text-sm text-gray-900 mt-2">' + esc(t.title) + '</p>' +
+            '  <p class="text-xs text-gray-500 mt-1">' + esc(t.desc) + '</p>' +
+            '</button>'
+          );
+        }).join('');
+
+        return (
+          '<div class="space-y-6">' +
+          '  <div class="flex flex-col md:flex-row md:items-center justify-between gap-4 no-print">' +
+          '    <div><h2 class="text-2xl font-display font-bold text-gray-900">Program Kerja Supervisi Akademik</h2><p class="text-sm text-gray-500">Pilih templat program kerja resmi, sesuaikan target, dan cetak / ekspor Word.</p></div>' +
+          '    <div class="flex gap-2">' +
+          '      <button type="button" id="btn-prog-word" class="px-4 py-2 bg-blue-600 text-white rounded-xl text-xs font-bold cursor-pointer">Ekspor Word (.doc)</button>' +
+          '      <button type="button" onclick="window.print()" class="px-4 py-2 bg-gray-900 text-white rounded-xl text-xs font-bold cursor-pointer">Cetak A4</button>' +
+          '    </div>' +
+          '  </div>' +
+          '  <div class="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-4 gap-4 no-print">' + tplCards + '</div>' +
+          '  <div class="bg-white p-5 rounded-2xl border border-gray-200 grid grid-cols-1 md:grid-cols-2 gap-4 no-print">' +
+          '    <div><label class="block text-xs font-bold text-gray-600 mb-1">Fokus Program</label><input id="prog-fokus" value="' + esc(pc.fokusProgram) + '" class="w-full px-3 py-2 border border-gray-200 rounded-xl text-sm" /></div>' +
+          '    <div><label class="block text-xs font-bold text-gray-600 mb-1">Waktu Pelaksanaan</label><input id="prog-waktu" value="' + esc(pc.waktuPelaksanaan) + '" class="w-full px-3 py-2 border border-gray-200 rounded-xl text-sm" /></div>' +
+          '    <div class="md:col-span-2"><label class="block text-xs font-bold text-gray-600 mb-1">Target Capaian</label><input id="prog-target" value="' + esc(pc.targetCapaian) + '" class="w-full px-3 py-2 border border-gray-200 rounded-xl text-sm" /></div>' +
+          '    <div class="md:col-span-2"><label class="block text-xs font-bold text-gray-600 mb-1">Catatan Pengawas</label><textarea id="prog-catatan" rows="2" class="w-full px-3 py-2 border border-gray-200 rounded-xl text-sm">' + esc(pc.catatanPengawas) + '</textarea></div>' +
+          '    <div class="md:col-span-2 flex justify-end"><button type="button" id="btn-save-prog" class="px-4 py-2 bg-brand-600 text-white rounded-xl text-xs font-bold cursor-pointer">Simpan Program Kerja</button></div>' +
+          '  </div>' +
+          '  <div id="program-print-area" class="bg-white p-8 rounded-2xl border border-gray-200 shadow-sm print-document-container space-y-5 text-sm">' +
+          '    <div class="text-center border-b-2 border-gray-900 pb-4">' +
+          '      <p class="text-xs font-bold uppercase tracking-wider">' + esc(meta.parentGovUpper) + '</p>' +
+          '      <p class="text-sm font-bold uppercase">' + esc(cfg.kopAuthority) + '</p>' +
+          '      <p class="text-lg font-extrabold uppercase">' + esc(cfg.schoolName) + '</p>' +
+          '      <p class="text-xs text-gray-600">' + esc(cfg.schoolAddress) + ' • NPSN: ' + esc(cfg.schoolNpsn) + '</p>' +
+          '    </div>' +
+          '    <div class="text-center"><h3 class="text-base font-bold uppercase underline">PROGRAM KERJA SUPERVISI AKADEMIK</h3><p class="text-xs text-gray-600">Tahun Pelajaran ' + esc(cfg.academicYear) + ' • ' + esc(pc.semester) + '</p></div>' +
+          '    <table class="w-full border-collapse border border-gray-300 text-xs">' +
+          '      <tr><td class="border border-gray-300 p-2 font-bold bg-gray-50 w-48">Fokus Program</td><td class="border border-gray-300 p-2">' + esc(pc.fokusProgram) + '</td></tr>' +
+          '      <tr><td class="border border-gray-300 p-2 font-bold bg-gray-50">Target Capaian</td><td class="border border-gray-300 p-2">' + esc(pc.targetCapaian) + '</td></tr>' +
+          '      <tr><td class="border border-gray-300 p-2 font-bold bg-gray-50">Jadwal Pelaksanaan</td><td class="border border-gray-300 p-2">' + esc(pc.waktuPelaksanaan) + '</td></tr>' +
+          '      <tr><td class="border border-gray-300 p-2 font-bold bg-gray-50">Jumlah Guru Sasaran</td><td class="border border-gray-300 p-2">' + state.gurus.length + ' Guru Terdaftar</td></tr>' +
+          '      <tr><td class="border border-gray-300 p-2 font-bold bg-gray-50">Catatan Pengawas</td><td class="border border-gray-300 p-2">' + esc(pc.catatanPengawas) + '</td></tr>' +
+          '    </table>' +
+          '    <div class="grid grid-cols-2 gap-8 pt-6 text-center text-xs">' +
+          '      <div><p>Mengetahui,</p><p>Kepala ' + esc(cfg.schoolName) + '</p><div class="h-16"></div><p class="font-bold underline">' + esc(cfg.headmasterName) + '</p><p>NIP. ' + esc(cfg.headmasterNip) + '</p></div>' +
+          '      <div><p>Bojonegoro, ' + new Date().toLocaleDateString('id-ID') + '</p><p>Pengawas Pembina</p><div class="h-16"></div><p class="font-bold underline">' + esc(cfg.supervisorName) + '</p><p>NIP. ' + esc(cfg.supervisorNip) + '</p></div>' +
+          '    </div>' +
+          '  </div>' +
+          '</div>'
+        );
+      }
+
+      // =====================================================================
+      // 5. INSTRUMEN SUPERVISI (DASHBOARD & 5-TAHAP SESSION WORKSPACE)
+      // =====================================================================
+      function renderInstrumen() {
+        var session = state.supervisions.find(function (sv) { return sv.id === state.selectedSupervisiId; });
+        if (!session) return renderInstrumenDashboard();
+        return renderInstrumenSession(session);
+      }
+
+      function renderInstrumenDashboard() {
+        var rows = state.supervisions.length === 0
+          ? '<tr><td colspan="6" class="py-14 text-center text-sm text-gray-400 italic">Belum ada jadwal supervisi. Klik "+ Buat Jadwal Supervisi" atau Import Excel.</td></tr>'
+          : state.supervisions.map(function (sv) {
+              var g = state.gurus.find(function (x) { return x.id === sv.instrument.guruId; });
+              var nama = (g && g.nama) || sv.instrument.namaGuru || '-';
+              var stats = computeScoreStats(sv.instrument.obsScores);
+              return (
+                '<tr class="hover:bg-gray-50 border-b border-gray-100 text-sm">' +
+                '  <td class="px-5 py-3.5"><p class="font-bold text-gray-900">' + esc(nama) + '</p><p class="text-xs text-gray-500">NIP. ' + esc(sv.instrument.nipGuru || '-') + '</p></td>' +
+                '  <td class="px-4 py-3.5 text-gray-700">' + esc(sv.instrument.mapel || '-') + ' (' + esc(sv.instrument.kelas || '-') + ')</td>' +
+                '  <td class="px-4 py-3.5 text-xs text-gray-600">' + esc(sv.instrument.tglObs || 'Belum ditentukan') + '</td>' +
+                '  <td class="px-4 py-3.5 font-bold text-brand-700">' + (stats.count ? stats.avg.toFixed(2) : '-') + '</td>' +
+                '  <td class="px-4 py-3.5"><span class="px-2.5 py-0.5 rounded-full text-xs font-bold bg-brand-50 text-brand-700">' + esc(sv.status) + '</span></td>' +
+                '  <td class="px-5 py-3.5 text-right space-x-1.5">' +
+                '    <button type="button" data-open-sv="' + esc(sv.id) + '" class="px-3 py-1.5 bg-brand-600 text-white rounded-lg text-xs font-bold cursor-pointer">Isi Instrumen</button>' +
+                '    <button type="button" data-del-sv="' + esc(sv.id) + '" class="px-2.5 py-1.5 bg-rose-50 text-rose-600 rounded-lg text-xs font-bold cursor-pointer">Hapus</button>' +
+                '  </td>' +
+                '</tr>'
+              );
+            }).join('');
+
+        return (
+          '<div class="space-y-6">' +
+          '  <div class="flex flex-col md:flex-row md:items-center justify-between gap-4">' +
+          '    <div><h2 class="text-2xl font-display font-bold text-gray-900">Instrumen Supervisi Klinis</h2><p class="text-sm text-gray-500">Jadwal dan instrumen 5 tahapan supervisi klinis (' + esc(state.instrumentTitle) + ').</p></div>' +
+          '    <div class="flex flex-wrap gap-2">' +
+          '      <button type="button" id="btn-open-rubric-modal" class="px-3.5 py-2 bg-white border border-gray-200 rounded-xl text-xs font-bold text-gray-700 cursor-pointer">Kustomisasi Rubrik</button>' +
+          '      <button type="button" id="btn-dl-sched-tpl" class="px-3.5 py-2 bg-white border border-gray-200 rounded-xl text-xs font-bold text-gray-700 cursor-pointer">Template Jadwal</button>' +
+          '      <label class="px-3.5 py-2 bg-emerald-50 border border-emerald-200 rounded-xl text-xs font-bold text-emerald-700 cursor-pointer">Import Jadwal<input type="file" id="input-import-sched" accept=".xlsx,.xls" class="hidden" /></label>' +
+          '      <button type="button" id="btn-new-schedule" class="px-4 py-2 bg-brand-600 text-white rounded-xl text-xs font-bold cursor-pointer">+ Buat Jadwal</button>' +
+          '    </div>' +
+          '  </div>' +
+          '  <div class="bg-white rounded-2xl border border-gray-200 shadow-sm overflow-hidden">' +
+          '    <div class="overflow-x-auto"><table class="w-full text-left"><thead class="bg-gray-50 border-b border-gray-200 text-xs uppercase text-gray-500"><tr><th class="px-5 py-3">Guru</th><th class="px-4 py-3">Mapel &amp; Kelas</th><th class="px-4 py-3">Tgl Observasi</th><th class="px-4 py-3">Skor</th><th class="px-4 py-3">Status</th><th class="px-5 py-3 text-right">Aksi</th></tr></thead><tbody>' + rows + '</tbody></table></div>' +
+          '  </div>' +
+          '</div>'
+        );
+      }
+
+      function renderInstrumenSession(sv) {
+        var instr = sv.instrument;
+        var g = state.gurus.find(function (x) { return x.id === instr.guruId; });
+        var guruNama = (g && g.nama) || instr.namaGuru || 'Guru';
+        var stats = computeScoreStats(instr.obsScores);
+        var stages = [
+          { id: 'pra', label: '1. Pra-Observasi' },
+          { id: 'obs', label: '2. Observasi Kelas' },
+          { id: 'pasca', label: '3. Pasca-Observasi' },
+          { id: 'docs', label: '4. Dokumentasi' },
+          { id: 'analysis', label: '5. Hasil & Analisis' },
+        ];
+
+        var stageBody = '';
+        if (state.sessionStage === 'pra') {
+          stageBody =
+            '<div class="space-y-4">' +
+            '  <div class="grid grid-cols-1 md:grid-cols-3 gap-4">' +
+            '    <div><label class="block text-xs font-bold text-gray-600 mb-1">Mata Pelajaran</label><input data-sv-field="mapel" value="' + esc(instr.mapel) + '" class="w-full px-3 py-2 border border-gray-200 rounded-xl text-sm" /></div>' +
+            '    <div><label class="block text-xs font-bold text-gray-600 mb-1">Kelas / Fase</label><input data-sv-field="kelas" value="' + esc(instr.kelas) + '" class="w-full px-3 py-2 border border-gray-200 rounded-xl text-sm" /></div>' +
+            '    <div><label class="block text-xs font-bold text-gray-600 mb-1">Tanggal Pra-Observasi</label><input type="date" data-sv-field="tglPra" value="' + esc(instr.tglPra) + '" class="w-full px-3 py-2 border border-gray-200 rounded-xl text-sm" /></div>' +
+            '  </div>' +
+            '  <div><label class="block text-xs font-bold text-gray-600 mb-1">Materi Pokok / Topik</label><input data-sv-field="materi" value="' + esc(instr.materi) + '" class="w-full px-3 py-2 border border-gray-200 rounded-xl text-sm" /></div>' +
+            '  <div class="grid grid-cols-1 md:grid-cols-2 gap-4">' +
+            '    <div><label class="block text-xs font-bold text-gray-600 mb-1">Tujuan Pembelajaran</label><textarea data-pra-field="tujuan" rows="3" class="w-full px-3 py-2 border border-gray-200 rounded-xl text-sm">' + esc(instr.praFields.tujuan) + '</textarea></div>' +
+            '    <div><label class="block text-xs font-bold text-gray-600 mb-1">Area Pengembangan yang Hendak Dicapai</label><textarea data-pra-field="area" rows="3" class="w-full px-3 py-2 border border-gray-200 rounded-xl text-sm">' + esc(instr.praFields.area) + '</textarea></div>' +
+            '    <div><label class="block text-xs font-bold text-gray-600 mb-1">Strategi / Model Pembelajaran</label><textarea data-pra-field="strategi" rows="3" class="w-full px-3 py-2 border border-gray-200 rounded-xl text-sm">' + esc(instr.praFields.strategi) + '</textarea></div>' +
+            '    <div><label class="block text-xs font-bold text-gray-600 mb-1">Media &amp; Sumber Belajar</label><textarea data-pra-field="media" rows="3" class="w-full px-3 py-2 border border-gray-200 rounded-xl text-sm">' + esc(instr.praFields.media) + '</textarea></div>' +
+            '  </div>' +
+            renderAiBlock('pra', instr.praAI, 'Analisis Kesiapan Pra-Observasi (Gemini AI)') +
+            '</div>';
+        } else if (state.sessionStage === 'obs') {
+          var secHtml = state.rubricSections.map(function (sec) {
+            return (
+              '<div class="border border-gray-200 rounded-2xl overflow-hidden">' +
+              '  <div class="bg-brand-50 px-4 py-3 font-bold text-xs text-brand-900 uppercase tracking-wider">' + esc(sec.title) + '</div>' +
+              '  <div class="divide-y divide-gray-100">' +
+              sec.items.map(function (item) {
+                var val = Number(instr.obsScores[item.id] || 0);
+                var note = instr.obsNotes[item.id] || '';
+                return (
+                  '<div class="p-4 flex flex-col lg:flex-row lg:items-center justify-between gap-4">' +
+                  '  <div class="flex-1"><p class="font-bold text-sm text-gray-900">' + esc(item.label) + '</p><p class="text-xs text-gray-500 mt-0.5">' + esc(item.desc) + '</p>' +
+                  '    <input type="text" placeholder="Catatan temuan / bukti autentik..." data-obs-note="' + esc(item.id) + '" value="' + esc(note) + '" class="mt-2 w-full px-3 py-1.5 bg-gray-50 border border-gray-200 rounded-lg text-xs" />' +
+                  '  </div>' +
+                  '  <div class="flex items-center gap-1.5 shrink-0">' +
+                  [1, 2, 3, 4].map(function (s) {
+                    return '<button type="button" data-obs-score="' + esc(item.id) + ':' + s + '" class="w-10 h-10 rounded-xl text-xs font-bold border cursor-pointer ' + (val === s ? 'bg-brand-600 text-white border-brand-600 shadow-sm' : 'bg-white text-gray-600 border-gray-200 hover:bg-gray-50') + '">' + s + '</button>';
+                  }).join('') +
+                  '  </div>' +
+                  '</div>'
+                );
+              }).join('') +
+              '  </div>' +
+              '</div>'
+            );
+          }).join('');
+          stageBody =
+            '<div class="space-y-4">' +
+            '  <div class="flex flex-wrap items-center justify-between gap-3 bg-gray-50 p-3.5 rounded-xl border border-gray-200">' +
+            '    <div><p class="text-xs font-bold text-gray-700">Rubrik Aktif: ' + esc(state.instrumentTitle) + '</p><p class="text-xs text-gray-500">Skor Saat Ini: <strong class="text-brand-700">' + stats.avg.toFixed(2) + ' / 4.00 (' + esc(stats.category) + ')</strong></p></div>' +
+            '    <div class="flex items-center gap-2"><label class="text-xs font-bold text-gray-600">Tgl Observasi:</label><input type="date" data-sv-field="tglObs" value="' + esc(instr.tglObs) + '" class="px-2.5 py-1.5 bg-white border border-gray-200 rounded-lg text-xs" /><button type="button" id="btn-open-rubric-modal" class="px-3 py-1.5 bg-white border border-gray-200 rounded-lg text-xs font-bold cursor-pointer">Ubah Rubrik</button></div>' +
+            '  </div>' +
+            secHtml +
+            renderAiBlock('observasi', instr.obsAI, 'Analisis Performa Observasi Kelas (Gemini AI)') +
+            '</div>';
+        } else if (state.sessionStage === 'pasca') {
+          var rtlOpts = [
+            { k: 'coaching', label: 'Coaching Klinis Personal' },
+            { k: 'mentoring', label: 'Mentoring Rekan Sejawat' },
+            { k: 'workshop', label: 'Workshop / IHT / Bimtek' },
+            { k: 'lessonStudy', label: 'Lesson Study / Open Class' },
+            { k: 'selfDevelopment', label: 'Pengembangan Diri Mandiri (PMM)' },
+          ];
+          stageBody =
+            '<div class="space-y-4">' +
+            '  <div><label class="block text-xs font-bold text-gray-600 mb-1">Tanggal Pasca-Observasi</label><input type="date" data-sv-field="tglPasca" value="' + esc(instr.tglPasca) + '" class="px-3 py-2 border border-gray-200 rounded-xl text-sm" /></div>' +
+            '  <div><label class="block text-xs font-bold text-gray-600 mb-1">Refleksi Guru Setelah Mengajar</label><textarea data-sv-field="pascaRefleksi" rows="3" class="w-full px-3 py-2 border border-gray-200 rounded-xl text-sm">' + esc(instr.pascaRefleksi) + '</textarea></div>' +
+            '  <div><label class="block text-xs font-bold text-amber-800 mb-1">Tanggapan / Sanggahan Guru (Hak Jawab Dialog Kemitraan)</label><textarea data-sv-field="pascaSanggah" rows="3" placeholder="Ruang klarifikasi / sanggahan konstruktif guru terhadap catatan observasi..." class="w-full px-3 py-2 border border-amber-200 bg-amber-50/40 rounded-xl text-sm">' + esc(instr.pascaSanggah) + '</textarea></div>' +
+            '  <div><label class="block text-xs font-bold text-gray-600 mb-1">Rencana Tindak Lanjut Guru</label><textarea data-sv-field="pascaRencana" rows="3" class="w-full px-3 py-2 border border-gray-200 rounded-xl text-sm">' + esc(instr.pascaRencana) + '</textarea></div>' +
+            '  <div class="p-4 bg-gray-50 rounded-xl border border-gray-200"><p class="text-xs font-bold text-gray-700 mb-2">Pilihan Rencana Tindak Lanjut (RTL)</p><div class="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 gap-2">' +
+            rtlOpts.map(function (o) {
+              var checked = Boolean(instr.rtl && instr.rtl[o.k]);
+              return '<label class="flex items-center gap-2 text-xs font-semibold text-gray-700 bg-white p-2.5 rounded-lg border border-gray-200 cursor-pointer"><input type="checkbox" data-rtl-key="' + o.k + '" ' + (checked ? 'checked' : '') + ' /><span>' + esc(o.label) + '</span></label>';
+            }).join('') +
+            '  </div></div>' +
+            renderAiBlock('pasca', instr.pascaAI, 'Analisis & Rekomendasi Pasca-Observasi (Gemini AI)') +
+            '</div>';
+        } else if (state.sessionStage === 'docs') {
+          var photosHtml = (instr.photos || []).map(function (p) {
+            return (
+              '<div class="relative border border-gray-200 rounded-xl overflow-hidden bg-gray-50">' +
+              '  <img src="' + esc(p.url) + '" alt="Foto Observasi" class="w-full h-36 object-cover" />' +
+              '  <div class="p-2 flex justify-between items-center text-xs"><span class="truncate">' + esc(p.caption || 'Foto Kelas') + '</span><button type="button" data-del-photo="' + esc(p.id) + '" class="text-rose-600 font-bold cursor-pointer">Hapus</button></div>' +
+              '</div>'
+            );
+          }).join('');
+          var docsHtml = (instr.documents || []).map(function (d) {
+            return (
+              '<div class="flex items-center justify-between p-3 bg-gray-50 border border-gray-200 rounded-xl text-xs">' +
+              '  <span class="font-bold text-gray-800 truncate">' + esc(d.name) + ' (' + esc(d.stage) + ')</span>' +
+              '  <button type="button" data-del-doc="' + esc(d.id) + '" class="text-rose-600 font-bold cursor-pointer">Hapus</button>' +
+              '</div>'
+            );
+          }).join('');
+          stageBody =
+            '<div class="space-y-6">' +
+            '  <div class="flex flex-wrap gap-3">' +
+            '    <label class="px-4 py-2.5 bg-brand-600 text-white rounded-xl text-xs font-bold cursor-pointer">+ Unggah Foto Kelas<input type="file" id="input-upload-photo" accept="image/*" class="hidden" /></label>' +
+            '    <label class="px-4 py-2.5 bg-emerald-600 text-white rounded-xl text-xs font-bold cursor-pointer">+ Lampirkan Dokumen Perangkat<input type="file" id="input-upload-doc" class="hidden" /></label>' +
+            '  </div>' +
+            '  <div><h4 class="text-xs font-bold uppercase text-gray-500 mb-2">Foto Dokumentasi (' + (instr.photos || []).length + ')</h4><div class="grid grid-cols-1 sm:grid-cols-3 gap-4">' + (photosHtml || '<p class="text-xs text-gray-400 italic">Belum ada foto diunggah.</p>') + '</div></div>' +
+            '  <div><h4 class="text-xs font-bold uppercase text-gray-500 mb-2">Dokumen Pendukung (' + (instr.documents || []).length + ')</h4><div class="space-y-2">' + (docsHtml || '<p class="text-xs text-gray-400 italic">Belum ada dokumen dilampirkan.</p>') + '</div></div>' +
+            '</div>';
+        } else {
+          stageBody =
+            '<div class="space-y-4">' +
+            '  <div class="p-4 bg-brand-50 border border-brand-200 rounded-2xl flex flex-wrap items-center justify-between gap-4">' +
+            '    <div><p class="text-xs font-bold text-brand-700 uppercase">Rekapitulasi Skor Rubrik</p><p class="text-2xl font-display font-bold text-brand-950">' + stats.avg.toFixed(2) + ' / 4.00 — ' + esc(stats.category) + '</p></div>' +
+            '    <div class="flex flex-wrap gap-2">' +
+            '      <button type="button" id="btn-sv-pdf" class="px-3.5 py-2 bg-rose-600 text-white rounded-xl text-xs font-bold cursor-pointer">Unduh PDF A4</button>' +
+            '      <button type="button" id="btn-sv-word" class="px-3.5 py-2 bg-blue-600 text-white rounded-xl text-xs font-bold cursor-pointer">Unduh Word (.doc)</button>' +
+            '    </div>' +
+            '  </div>' +
+            '  <div><label class="block text-xs font-bold text-gray-600 mb-1">Status Sesi Supervisi</label>' +
+            '    <select id="select-sv-status" class="px-3 py-2 border border-gray-200 rounded-xl text-sm font-bold">' +
+            ['Direncakan', 'Pra-Observasi', 'Observasi', 'Pasca-Observasi', 'Tindak Lanjut', 'Selesai'].map(function (st) {
+              return '<option value="' + st + '" ' + (sv.status === st ? 'selected' : '') + '>' + st + '</option>';
+            }).join('') +
+            '    </select>' +
+            '  </div>' +
+            '  <div><label class="block text-xs font-bold text-gray-600 mb-1">Kekuatan Utama Guru</label><textarea data-sv-field="kekuatan" rows="2" class="w-full px-3 py-2 border border-gray-200 rounded-xl text-sm">' + esc(instr.kekuatan) + '</textarea></div>' +
+            '  <div><label class="block text-xs font-bold text-gray-600 mb-1">Area yang Perlu Ditingkatkan</label><textarea data-sv-field="perbaikan" rows="2" class="w-full px-3 py-2 border border-gray-200 rounded-xl text-sm">' + esc(instr.perbaikan) + '</textarea></div>' +
+            '  <div><label class="block text-xs font-bold text-gray-600 mb-1">Rekomendasi Supervisor</label><textarea data-sv-field="rekomendasi" rows="2" class="w-full px-3 py-2 border border-gray-200 rounded-xl text-sm">' + esc(instr.rekomendasi) + '</textarea></div>' +
+            renderAiBlock('all', '', 'Sintesis Analisis Klinis Lengkap (Gemini AI)') +
+            '</div>';
+        }
+
+        return (
+          '<div class="space-y-5">' +
+          '  <div class="bg-white p-4 rounded-2xl border border-gray-200 flex flex-wrap items-center justify-between gap-3">' +
+          '    <div class="flex items-center gap-3">' +
+          '      <button type="button" id="btn-back-sv-list" class="px-3 py-1.5 bg-gray-100 hover:bg-gray-200 rounded-xl text-xs font-bold cursor-pointer">← Daftar Jadwal</button>' +
+          '      <div><h2 class="font-display font-bold text-base text-gray-900">' + esc(guruNama) + '</h2><p class="text-xs text-gray-500">' + esc(instr.mapel || 'Mapel') + ' • ' + esc(instr.kelas || '-') + ' • Status: <strong>' + esc(sv.status) + '</strong></p></div>' +
+          '    </div>' +
+          '    <button type="button" id="btn-save-session" class="px-4 py-2 bg-emerald-600 hover:bg-emerald-700 text-white rounded-xl text-xs font-bold cursor-pointer">Simpan Perubahan</button>' +
+          '  </div>' +
+          '  <div class="flex gap-2 overflow-x-auto pb-1">' +
+          stages.map(function (st) {
+            var active = state.sessionStage === st.id;
+            return '<button type="button" data-stage="' + st.id + '" class="px-4 py-2.5 rounded-xl text-xs font-bold whitespace-nowrap cursor-pointer ' + (active ? 'bg-brand-600 text-white shadow-sm' : 'bg-white border border-gray-200 text-gray-600 hover:bg-gray-50') + '">' + esc(st.label) + '</button>';
+          }).join('') +
+          '  </div>' +
+          '  <div class="bg-white p-6 rounded-2xl border border-gray-200 shadow-sm">' + stageBody + '</div>' +
+          '</div>'
+        );
+      }
+
+      function renderAiBlock(stage, content, title) {
+        return (
+          '<div class="mt-4 p-4 rounded-2xl bg-gradient-to-r from-indigo-50 to-brand-50 border border-indigo-200 space-y-2">' +
+          '  <div class="flex flex-wrap items-center justify-between gap-2">' +
+          '    <p class="text-xs font-extrabold text-indigo-900 flex items-center gap-1.5"><i data-lucide="sparkles" class="w-4 h-4 text-indigo-600"></i>' + esc(title) + '</p>' +
+          '    <button type="button" data-run-ai="' + stage + '" ' + (state.aiLoading ? 'disabled' : '') + ' class="px-3.5 py-1.5 bg-indigo-600 hover:bg-indigo-700 text-white rounded-xl text-xs font-bold cursor-pointer disabled:opacity-50">' +
+          (state.aiLoading ? 'Menganalisis...' : 'Analisis AI Gemini') + '</button>' +
+          '  </div>' +
+          (content ? '<div class="p-3 bg-white rounded-xl border border-indigo-100 text-xs text-gray-700 whitespace-pre-line">' + esc(content) + '</div>' : '') +
+          '</div>'
+        );
+      }
+
+      // =====================================================================
+      // 6. LAPORAN HASIL
+      // =====================================================================
+      function renderLaporanHasil() {
+        var sv = state.supervisions.find(function (s) { return s.id === state.selectedSupervisiId; }) || state.supervisions[0];
+        if (!sv) {
+          return (
+            '<div class="bg-white rounded-2xl p-12 border border-gray-200 text-center space-y-4">' +
+            '  <h2 class="text-xl font-display font-bold text-gray-900">Belum Ada Sesi Supervisi</h2>' +
+            '  <p class="text-sm text-gray-500 max-w-md mx-auto">Tambahkan data guru dan isi instrumen supervisi terlebih dahulu untuk mencetak laporan resmi A4.</p>' +
+            '  <button type="button" data-nav="instrumen" class="px-5 py-2.5 bg-brand-600 text-white rounded-xl text-xs font-bold cursor-pointer">Buka Instrumen Supervisi</button>' +
+            '</div>'
+          );
+        }
+
+        state.selectedSupervisiId = sv.id;
+        var instr = sv.instrument;
+        var cfg = state.schoolConfig;
+        var meta = derivedSchoolMeta();
+        var g = state.gurus.find(function (x) { return x.id === instr.guruId; });
+        var guruNama = (g && g.nama) || instr.namaGuru || '-';
+        var stats = computeScoreStats(instr.obsScores);
+
+        var selectorOpts = state.supervisions.map(function (s) {
+          var sg = state.gurus.find(function (x) { return x.id === s.instrument.guruId; });
+          var n = (sg && sg.nama) || s.instrument.namaGuru || 'Guru';
+          return '<option value="' + esc(s.id) + '" ' + (s.id === sv.id ? 'selected' : '') + '>' + esc(n) + ' — ' + esc(s.instrument.mapel || 'Mapel') + '</option>';
+        }).join('');
+
+        return (
+          '<div class="space-y-6">' +
+          '  <div class="flex flex-col md:flex-row md:items-center justify-between gap-4 no-print">' +
+          '    <div><h2 class="text-2xl font-display font-bold text-gray-900">Laporan Hasil Supervisi Klinis</h2><p class="text-sm text-gray-500">Pratinjau dokumen resmi A4 siap cetak, ekspor PDF, atau Word.</p></div>' +
+          '    <div class="flex flex-wrap gap-2">' +
+          '      <select id="laporan-sv-select" class="px-3 py-2 bg-white border border-gray-200 rounded-xl text-xs font-bold">' + selectorOpts + '</select>' +
+          '      <button type="button" data-run-ai="all" class="px-3.5 py-2 bg-indigo-600 text-white rounded-xl text-xs font-bold cursor-pointer">Analisis AI</button>' +
+          '      <button type="button" id="btn-laporan-pdf" class="px-3.5 py-2 bg-rose-600 text-white rounded-xl text-xs font-bold cursor-pointer">PDF A4</button>' +
+          '      <button type="button" id="btn-laporan-word" class="px-3.5 py-2 bg-blue-600 text-white rounded-xl text-xs font-bold cursor-pointer">Word (.doc)</button>' +
+          '      <button type="button" onclick="window.print()" class="px-3.5 py-2 bg-gray-900 text-white rounded-xl text-xs font-bold cursor-pointer">Cetak</button>' +
+          '    </div>' +
+          '  </div>' +
+          '  <div id="laporan-print-area" class="bg-white p-8 rounded-2xl border border-gray-200 shadow-sm print-document-container space-y-5 text-xs">' +
+          '    <div class="text-center border-b-2 border-gray-900 pb-4">' +
+          '      <p class="font-bold uppercase">' + esc(meta.parentGovUpper) + '</p>' +
+          '      <p class="text-sm font-bold uppercase">' + esc(cfg.kopAuthority) + '</p>' +
+          '      <p class="text-lg font-extrabold uppercase">' + esc(cfg.schoolName) + '</p>' +
+          '      <p class="text-gray-600">' + esc(cfg.schoolAddress) + ' • NPSN: ' + esc(cfg.schoolNpsn) + '</p>' +
+          '    </div>' +
+          '    <div class="text-center"><h3 class="text-sm font-extrabold uppercase underline">LAPORAN HASIL SUPERVISI AKADEMIK KLINIS</h3><p>Tahun Pelajaran ' + esc(cfg.academicYear) + '</p></div>' +
+          '    <table class="w-full border-collapse border border-gray-300">' +
+          '      <tr><td class="border border-gray-300 p-2 font-bold bg-gray-50">Nama Guru</td><td class="border border-gray-300 p-2">' + esc(guruNama) + '</td><td class="border border-gray-300 p-2 font-bold bg-gray-50">Mata Pelajaran</td><td class="border border-gray-300 p-2">' + esc(instr.mapel || '-') + '</td></tr>' +
+          '      <tr><td class="border border-gray-300 p-2 font-bold bg-gray-50">NIP</td><td class="border border-gray-300 p-2">' + esc(instr.nipGuru || '-') + '</td><td class="border border-gray-300 p-2 font-bold bg-gray-50">Kelas / Materi</td><td class="border border-gray-300 p-2">' + esc(instr.kelas || '-') + ' / ' + esc(instr.materi || '-') + '</td></tr>' +
+          '      <tr><td class="border border-gray-300 p-2 font-bold bg-gray-50">Skor Rata-Rata</td><td class="border border-gray-300 p-2 font-bold text-brand-700">' + stats.avg.toFixed(2) + ' / 4.00</td><td class="border border-gray-300 p-2 font-bold bg-gray-50">Predikat</td><td class="border border-gray-300 p-2 font-bold">' + esc(stats.category) + '</td></tr>' +
+          '    </table>' +
+          '    <table class="w-full border-collapse border border-gray-300">' +
+          '      <thead><tr class="bg-gray-100"><th class="border border-gray-300 p-2 text-left">Indikator Rubrik (' + esc(state.instrumentTitle) + ')</th><th class="border border-gray-300 p-2 text-center w-20">Skor</th><th class="border border-gray-300 p-2 text-left">Catatan Lapangan</th></tr></thead>' +
+          '      <tbody>' + state.rubricSections.map(function (sec) {
+            return '<tr><td colspan="3" class="border border-gray-300 p-2 font-bold bg-brand-50">' + esc(sec.title) + '</td></tr>' +
+              sec.items.map(function (item) {
+                return '<tr><td class="border border-gray-300 p-2">' + esc(item.label) + '</td><td class="border border-gray-300 p-2 text-center font-bold">' + esc(instr.obsScores[item.id] || '-') + '</td><td class="border border-gray-300 p-2">' + esc(instr.obsNotes[item.id] || '-') + '</td></tr>';
+              }).join('');
+          }).join('') + '</tbody>' +
+          '    </table>' +
+          '    <table class="w-full border-collapse border border-gray-300">' +
+          '      <tr><td class="border border-gray-300 p-2 font-bold bg-gray-50 w-44">Refleksi Guru</td><td class="border border-gray-300 p-2">' + esc(instr.pascaRefleksi || '-') + '</td></tr>' +
+          '      <tr><td class="border border-gray-300 p-2 font-bold bg-gray-50">Sanggahan / Hak Jawab</td><td class="border border-gray-300 p-2">' + esc(instr.pascaSanggah || '-') + '</td></tr>' +
+          '      <tr><td class="border border-gray-300 p-2 font-bold bg-gray-50">Kekuatan Utama</td><td class="border border-gray-300 p-2">' + esc(instr.kekuatan || '-') + '</td></tr>' +
+          '      <tr><td class="border border-gray-300 p-2 font-bold bg-gray-50">Area Perbaikan</td><td class="border border-gray-300 p-2">' + esc(instr.perbaikan || '-') + '</td></tr>' +
+          '      <tr><td class="border border-gray-300 p-2 font-bold bg-gray-50">Rekomendasi</td><td class="border border-gray-300 p-2">' + esc(instr.rekomendasi || '-') + '</td></tr>' +
+          '    </table>' +
+          '    <div class="grid grid-cols-2 gap-8 pt-6 text-center avoid-break">' +
+          '      <div><p>Guru yang Disupervisi,</p><div class="h-14"></div><p class="font-bold underline">' + esc(guruNama) + '</p><p>NIP. ' + esc(instr.nipGuru || '-') + '</p></div>' +
+          '      <div><p>Supervisor / Pengawas,</p><div class="h-14"></div><p class="font-bold underline">' + esc(cfg.supervisorName) + '</p><p>NIP. ' + esc(cfg.supervisorNip) + '</p></div>' +
+          '    </div>' +
+          '  </div>' +
+          '</div>'
+        );
+      }
+
+      // =====================================================================
+      // 7. TINDAK LANJUT SUPERVISI
+      // =====================================================================
+      function renderTindakLanjut() {
+        var impact = computeImpactStats();
+        var q = state.tlSearch.toLowerCase();
+        var filtered = state.followUps.filter(function (f) {
+          var mq = !q || f.guruNama.toLowerCase().indexOf(q) >= 0 || f.temuan.toLowerCase().indexOf(q) >= 0 || f.intervensi.toLowerCase().indexOf(q) >= 0;
+          var mi = state.tlImpactFilter === 'all' || f.dampak === state.tlImpactFilter;
+          return mq && mi;
+        });
+
+        var catCounts = PROBLEM_CATEGORIES.map(function (cat) {
+          var cnt = 0;
+          state.followUps.forEach(function (f) {
+            var txt = (f.temuan + ' ' + f.intervensi).toLowerCase();
+            if (cat.keywords.some(function (kw) { return txt.indexOf(kw) >= 0; })) cnt++;
+          });
+          return { name: cat.name, count: cnt, solusi: cat.solusiIHT };
+        });
+        var maxCat = Math.max(1, Math.max.apply(null, catCounts.map(function (c) { return c.count; })));
+
+        return (
+          '<div class="space-y-6">' +
+          '  <div class="flex flex-col md:flex-row md:items-center justify-between gap-4">' +
+          '    <div><h2 class="text-2xl font-display font-bold text-gray-900">Tindak Lanjut &amp; Peta Masalah</h2><p class="text-sm text-gray-500">Pemetaan kendala pembelajaran dan efektivitas intervensi supervisi.</p></div>' +
+          '    <button type="button" id="btn-add-tl" class="px-4 py-2 bg-brand-600 text-white rounded-xl text-xs font-bold cursor-pointer">+ Tambah Tindak Lanjut</button>' +
+          '  </div>' +
+          '  <div class="grid grid-cols-2 sm:grid-cols-5 gap-3 bg-slate-900 text-white p-5 rounded-2xl">' +
+          impactTile('Disupervisi', impact.totalDisupervisi, 'Total guru', 'text-white') +
+          impactTile('Refleksi', impact.sudahRefleksi, 'Pasca-Obs', 'text-emerald-400') +
+          impactTile('Tindak Lanjut', impact.sudahTindakLanjut, 'Intervensi', 'text-indigo-400') +
+          impactTile('Meningkat', impact.perubahanPraktik, 'Praktik baik', 'text-emerald-300') +
+          impactTile('Coaching', impact.perluPendampingan, 'Perlu pendampingan', 'text-amber-300') +
+          '  </div>' +
+          '  <div class="bg-white p-6 rounded-2xl border border-gray-200 space-y-3">' +
+          '    <h3 class="font-display font-bold text-base">Peta Masalah Pembelajaran</h3>' +
+          catCounts.map(function (c) {
+            var pct = Math.round((c.count / maxCat) * 100);
+            return (
+              '<div class="space-y-1">' +
+              '  <div class="flex justify-between text-xs font-bold"><span>' + esc(c.name) + '</span><span class="text-brand-700">' + c.count + ' Temuan</span></div>' +
+              '  <svg class="w-full h-3 rounded-full bg-gray-100"><rect x="0" y="0" width="' + pct + '%" height="12" rx="6" fill="#2563eb"></rect></svg>' +
+              '</div>'
+            );
+          }).join('') +
+          '  </div>' +
+          '  <div class="bg-white rounded-2xl border border-gray-200 shadow-sm overflow-hidden">' +
+          '    <div class="p-4 border-b border-gray-100 flex flex-wrap gap-3 justify-between">' +
+          '      <input type="text" id="tl-search" value="' + esc(state.tlSearch) + '" placeholder="Cari guru atau temuan..." class="px-3.5 py-2 bg-gray-50 border border-gray-200 rounded-xl text-sm w-full sm:w-72" />' +
+          '      <select id="tl-impact-filter" class="px-3 py-2 bg-gray-50 border border-gray-200 rounded-xl text-xs font-bold">' +
+          '        <option value="all">Semua Dampak</option>' +
+          '        <option value="Meningkat" ' + (state.tlImpactFilter === 'Meningkat' ? 'selected' : '') + '>Meningkat</option>' +
+          '        <option value="Dipantau" ' + (state.tlImpactFilter === 'Dipantau' ? 'selected' : '') + '>Dipantau</option>' +
+          '        <option value="Perlu Pendampingan" ' + (state.tlImpactFilter === 'Perlu Pendampingan' ? 'selected' : '') + '>Perlu Pendampingan</option>' +
+          '      </select>' +
+          '    </div>' +
+          '    <div class="overflow-x-auto"><table class="w-full text-left text-sm"><thead class="bg-gray-50 border-b border-gray-200 text-xs uppercase text-gray-500"><tr><th class="px-5 py-3">Guru</th><th class="px-4 py-3">Temuan</th><th class="px-4 py-3">Intervensi</th><th class="px-4 py-3">Dampak</th><th class="px-5 py-3 text-right">Aksi</th></tr></thead><tbody>' +
+          (filtered.length === 0
+            ? '<tr><td colspan="5" class="py-12 text-center text-gray-400 italic">Belum ada data tindak lanjut.</td></tr>'
+            : filtered.map(function (f) {
+                return (
+                  '<tr class="border-b border-gray-100 hover:bg-gray-50">' +
+                  '  <td class="px-5 py-3 font-bold">' + esc(f.guruNama) + '<div class="text-xs font-normal text-gray-500">' + esc(f.mapel || '-') + '</div></td>' +
+                  '  <td class="px-4 py-3">' + esc(f.temuan) + '</td>' +
+                  '  <td class="px-4 py-3">' + esc(f.intervensi) + '</td>' +
+                  '  <td class="px-4 py-3"><span class="px-2.5 py-0.5 rounded-full text-xs font-bold bg-emerald-50 text-emerald-700">' + esc(f.dampak) + '</span></td>' +
+                  '  <td class="px-5 py-3 text-right space-x-1.5"><button type="button" data-del-tl="' + esc(f.id) + '" class="px-2.5 py-1 bg-rose-50 text-rose-600 rounded-lg text-xs font-bold cursor-pointer">Hapus</button></td>' +
+                  '</tr>'
+                );
+              }).join('')) +
+          '    </tbody></table></div>' +
+          '  </div>' +
+          '</div>'
+        );
+      }
+
+      // =====================================================================
+      // 8. PENGATURAN SEKOLAH
+      // =====================================================================
+      function renderPengaturanSekolah() {
+        var cfg = state.schoolConfig;
+        var meta = derivedSchoolMeta();
+        return (
+          '<div class="space-y-6">' +
+          '  <div class="flex flex-wrap items-center justify-between gap-4">' +
+          '    <div><h2 class="text-2xl font-display font-bold text-gray-900">Pengaturan Satuan Pendidikan &amp; Rubrik</h2><p class="text-sm text-gray-500">Sesuaikan jenjang sekolah, Kop instansi, pejabat penanda tangan, dan instrumen rubrik.</p></div>' +
+          '    <button type="button" id="btn-open-rubric-modal" class="px-4 py-2 bg-indigo-600 text-white rounded-xl text-xs font-bold cursor-pointer">Kustomisasi Rubrik (' + countRubricItems(state.rubricSections) + ' Indikator)</button>' +
+          '  </div>' +
+          '  <div class="bg-white p-6 rounded-2xl border border-gray-200 space-y-5">' +
+          '    <div class="grid grid-cols-2 sm:grid-cols-6 gap-2">' +
+          JENJANG_OPTIONS.map(function (j) {
+            var active = cfg.schoolLevel === j.id;
+            return '<button type="button" data-pick-jenjang="' + j.id + '" class="p-3 rounded-xl border text-center cursor-pointer ' + (active ? 'border-brand-600 bg-brand-50 text-brand-700 font-extrabold' : 'border-gray-200 text-gray-600 font-semibold') + '"><p class="text-sm">' + j.id + '</p><p class="text-[10px]">' + j.label + '</p></button>';
+          }).join('') +
+          '    </div>' +
+          '    <div class="grid grid-cols-1 md:grid-cols-2 gap-4">' +
+          '      <div><label class="block text-xs font-bold text-gray-600 mb-1">Instansi Pembina (Kop Surat)</label>' +
+          '        <select id="cfg-kop" class="w-full px-3 py-2 border border-gray-200 rounded-xl text-sm">' +
+          '          <option value="' + KOP_AUTHORITY_KAB + '" ' + (cfg.kopAuthority === KOP_AUTHORITY_KAB ? 'selected' : '') + '>' + KOP_AUTHORITY_KAB + '</option>' +
+          '          <option value="' + KOP_AUTHORITY_CABDIN + '" ' + (cfg.kopAuthority === KOP_AUTHORITY_CABDIN ? 'selected' : '') + '>' + KOP_AUTHORITY_CABDIN + '</option>' +
+          '        </select></div>' +
+          '      <div><label class="block text-xs font-bold text-gray-600 mb-1">Tahun Akademik</label><input id="cfg-year" value="' + esc(cfg.academicYear) + '" class="w-full px-3 py-2 border border-gray-200 rounded-xl text-sm" /></div>' +
+          '      <div><label class="block text-xs font-bold text-gray-600 mb-1">Nama Sekolah</label><input id="cfg-name" value="' + esc(cfg.schoolName) + '" class="w-full px-3 py-2 border border-gray-200 rounded-xl text-sm" /></div>' +
+          '      <div><label class="block text-xs font-bold text-gray-600 mb-1">NPSN</label><input id="cfg-npsn" value="' + esc(cfg.schoolNpsn) + '" class="w-full px-3 py-2 border border-gray-200 rounded-xl text-sm" /></div>' +
+          '      <div class="md:col-span-2"><label class="block text-xs font-bold text-gray-600 mb-1">Alamat Sekolah</label><input id="cfg-addr" value="' + esc(cfg.schoolAddress) + '" class="w-full px-3 py-2 border border-gray-200 rounded-xl text-sm" /></div>' +
+          '      <div><label class="block text-xs font-bold text-gray-600 mb-1">Nama Kepala Sekolah</label><input id="cfg-head-name" value="' + esc(cfg.headmasterName) + '" class="w-full px-3 py-2 border border-gray-200 rounded-xl text-sm" /></div>' +
+          '      <div><label class="block text-xs font-bold text-gray-600 mb-1">NIP Kepala Sekolah</label><input id="cfg-head-nip" value="' + esc(cfg.headmasterNip) + '" class="w-full px-3 py-2 border border-gray-200 rounded-xl text-sm" /></div>' +
+          '      <div><label class="block text-xs font-bold text-gray-600 mb-1">Nama Pengawas Pembina</label><input id="cfg-sup-name" value="' + esc(cfg.supervisorName) + '" class="w-full px-3 py-2 border border-gray-200 rounded-xl text-sm" /></div>' +
+          '      <div><label class="block text-xs font-bold text-gray-600 mb-1">NIP Pengawas Pembina</label><input id="cfg-sup-nip" value="' + esc(cfg.supervisorNip) + '" class="w-full px-3 py-2 border border-gray-200 rounded-xl text-sm" /></div>' +
+          '    </div>' +
+          '    <div class="p-4 bg-gray-50 rounded-xl border border-gray-200 text-center space-y-0.5">' +
+          '      <p class="text-[10px] font-bold uppercase text-gray-400">Pratinjau Kop Surat</p>' +
+          '      <p class="text-xs font-bold">' + esc(meta.parentGovUpper) + '</p>' +
+          '      <p class="text-sm font-bold">' + esc(cfg.kopAuthority) + '</p>' +
+          '      <p class="text-base font-extrabold">' + esc(cfg.schoolName) + '</p>' +
+          '    </div>' +
+          '    <div class="flex justify-end"><button type="button" id="btn-save-school-cfg" class="px-6 py-2.5 bg-brand-600 hover:bg-brand-700 text-white rounded-xl text-xs font-bold cursor-pointer">Simpan Pengaturan Sekolah</button></div>' +
+          '  </div>' +
+          '</div>'
+        );
+      }
+
+      // =====================================================================
+      // BINDING EVENT INTERAKTIF
+      // =====================================================================
+      function bindEvents() {
+        document.querySelectorAll('[data-nav]').forEach(function (el) {
+          el.addEventListener('click', function () {
+            state.activeTab = el.getAttribute('data-nav');
+            if (state.activeTab === 'instrumen' && !state.supervisions.some(function (s) { return s.id === state.selectedSupervisiId; })) {
+              state.selectedSupervisiId = null;
+            }
+            render();
+          });
+        });
+
+        document.querySelectorAll('[data-open-sv]').forEach(function (el) {
+          el.addEventListener('click', function () {
+            state.selectedSupervisiId = el.getAttribute('data-open-sv');
+            state.activeTab = 'instrumen';
+            state.sessionStage = 'pra';
+            render();
+          });
+        });
+
+        document.querySelectorAll('[data-del-sv]').forEach(function (el) {
+          el.addEventListener('click', function () {
+            var id = el.getAttribute('data-del-sv');
+            openConfirmModal('Hapus Jadwal Supervisi?', 'Data sesi supervisi ini akan dihapus permanen.', function () {
+              state.supervisions = state.supervisions.filter(function (s) { return s.id !== id; });
+              if (state.selectedSupervisiId === id) state.selectedSupervisiId = null;
+              pushToServer('syncAllSupervisions', state.supervisions);
+              showToast('Jadwal supervisi dihapus.', 'success');
+              render();
+            });
+          });
+        });
+
+        // Data Guru bindings
+        var gSearch = document.getElementById('guru-search-input');
+        if (gSearch) gSearch.addEventListener('input', function (e) { state.guruSearch = e.target.value; render(); });
+        var gJenjang = document.getElementById('guru-jenjang-select');
+        if (gJenjang) gJenjang.addEventListener('change', function (e) { state.guruJenjangFilter = e.target.value; render(); });
+        var btnDlGuruTpl = document.getElementById('btn-dl-guru-tpl');
+        if (btnDlGuruTpl) btnDlGuruTpl.addEventListener('click', downloadGuruExcelTemplate);
+        var btnAddGuru = document.getElementById('btn-add-guru');
+        if (btnAddGuru) btnAddGuru.addEventListener('click', function () { openGuruFormModal(null); });
+        var inputImportGuru = document.getElementById('input-import-guru');
+        if (inputImportGuru) inputImportGuru.addEventListener('change', handleImportGuruExcel);
+
+        document.querySelectorAll('[data-edit-guru]').forEach(function (el) {
+          el.addEventListener('click', function () {
+            var g = state.gurus.find(function (x) { return x.id === el.getAttribute('data-edit-guru'); });
+            if (g) openGuruFormModal(g);
+          });
+        });
+
+        document.querySelectorAll('[data-del-guru]').forEach(function (el) {
+          el.addEventListener('click', function () {
+            var id = el.getAttribute('data-del-guru');
+            openConfirmModal('Hapus Data Guru?', 'Data guru dan riwayat supervisinya akan dihapus.', function () {
+              state.gurus = state.gurus.filter(function (g) { return g.id !== id; });
+              state.supervisions = state.supervisions.filter(function (sv) { return sv.instrument.guruId !== id; });
+              pushToServer('syncAllGurus', state.gurus);
+              pushToServer('syncAllSupervisions', state.supervisions);
+              showToast('Data guru berhasil dihapus.', 'success');
+              render();
+            });
+          });
+        });
+
+        document.querySelectorAll('[data-start-sv-guru]').forEach(function (el) {
+          el.addEventListener('click', function () {
+            startOrOpenSupervisionForGuru(el.getAttribute('data-start-sv-guru'));
+          });
+        });
+
+        // Program bindings
+        document.querySelectorAll('[data-select-prog-tpl]').forEach(function (el) {
+          el.addEventListener('click', function () {
+            var tid = el.getAttribute('data-select-prog-tpl');
+            var tpl = PROGRAM_TEMPLATE_OPTIONS.find(function (t) { return t.id === tid; });
+            if (tpl) {
+              state.programConfig.templateId = tid;
+              state.programConfig.fokusProgram = tpl.fokus;
+              state.programConfig.targetCapaian = tpl.target;
+              state.programConfig.waktuPelaksanaan = tpl.waktu;
+              pushToServer('saveProgramConfig', state.programConfig);
+              render();
+            }
+          });
+        });
+        var btnSaveProg = document.getElementById('btn-save-prog');
+        if (btnSaveProg) {
+          btnSaveProg.addEventListener('click', function () {
+            state.programConfig.fokusProgram = document.getElementById('prog-fokus').value;
+            state.programConfig.waktuPelaksanaan = document.getElementById('prog-waktu').value;
+            state.programConfig.targetCapaian = document.getElementById('prog-target').value;
+            state.programConfig.catatanPengawas = document.getElementById('prog-catatan').value;
+            pushToServer('saveProgramConfig', state.programConfig);
+            showToast('Program kerja berhasil disimpan.', 'success');
+            render();
+          });
+        }
+        var btnProgWord = document.getElementById('btn-prog-word');
+        if (btnProgWord) {
+          btnProgWord.addEventListener('click', function () {
+            var area = document.getElementById('program-print-area');
+            if (area) exportWordDocument('Program Kerja Supervisi', area.innerHTML, 'Program_Supervisi_SIPERAK.doc');
+          });
+        }
+
+        // Instrumen bindings
+        var btnBackList = document.getElementById('btn-back-sv-list');
+        if (btnBackList) btnBackList.addEventListener('click', function () { state.selectedSupervisiId = null; render(); });
+        var btnNewSched = document.getElementById('btn-new-schedule');
+        if (btnNewSched) btnNewSched.addEventListener('click', openNewScheduleModal);
+        var btnDlSchedTpl = document.getElementById('btn-dl-sched-tpl');
+        if (btnDlSchedTpl) btnDlSchedTpl.addEventListener('click', downloadScheduleExcelTemplate);
+        var inputImportSched = document.getElementById('input-import-sched');
+        if (inputImportSched) inputImportSched.addEventListener('change', handleImportScheduleExcel);
+        var btnOpenRubric = document.getElementById('btn-open-rubric-modal');
+        if (btnOpenRubric) btnOpenRubric.addEventListener('click', openRubricModal);
+
+        document.querySelectorAll('[data-stage]').forEach(function (el) {
+          el.addEventListener('click', function () {
+            state.sessionStage = el.getAttribute('data-stage');
+            render();
+          });
+        });
+
+        var activeSv = state.supervisions.find(function (s) { return s.id === state.selectedSupervisiId; });
+        if (activeSv) {
+          document.querySelectorAll('[data-sv-field]').forEach(function (el) {
+            el.addEventListener('input', function () {
+              activeSv.instrument[el.getAttribute('data-sv-field')] = el.value;
+            });
+          });
+          document.querySelectorAll('[data-pra-field]').forEach(function (el) {
+            el.addEventListener('input', function () {
+              activeSv.instrument.praFields[el.getAttribute('data-pra-field')] = el.value;
+            });
+          });
+          document.querySelectorAll('[data-obs-note]').forEach(function (el) {
+            el.addEventListener('input', function () {
+              activeSv.instrument.obsNotes[el.getAttribute('data-obs-note')] = el.value;
+            });
+          });
+          document.querySelectorAll('[data-obs-score]').forEach(function (el) {
+            el.addEventListener('click', function () {
+              var parts = el.getAttribute('data-obs-score').split(':');
+              activeSv.instrument.obsScores[parts[0]] = Number(parts[1]);
+              if (activeSv.status === 'Direncakan' || activeSv.status === 'Pra-Observasi') {
+                activeSv.status = 'Observasi';
+              }
+              pushToServer('syncAllSupervisions', state.supervisions);
+              render();
+            });
+          });
+          document.querySelectorAll('[data-rtl-key]').forEach(function (el) {
+            el.addEventListener('change', function () {
+              activeSv.instrument.rtl[el.getAttribute('data-rtl-key')] = el.checked;
+            });
+          });
+          var selStatus = document.getElementById('select-sv-status');
+          if (selStatus) {
+            selStatus.addEventListener('change', function (e) {
+              activeSv.status = e.target.value;
+              pushToServer('syncAllSupervisions', state.supervisions);
+              render();
+            });
+          }
+          var btnSaveSv = document.getElementById('btn-save-session');
+          if (btnSaveSv) {
+            btnSaveSv.addEventListener('click', function () {
+              syncCompletedSupervisionsToFollowUps();
+              pushToServer('syncAllSupervisions', state.supervisions);
+              showToast('Progres sesi supervisi berhasil disimpan.', 'success');
+              render();
+            });
+          }
+          var upPhoto = document.getElementById('input-upload-photo');
+          if (upPhoto) {
+            upPhoto.addEventListener('change', function (e) {
+              var file = e.target.files[0];
+              if (!file) return;
+              var reader = new FileReader();
+              reader.onload = function (ev) {
+                activeSv.instrument.photos = activeSv.instrument.photos || [];
+                activeSv.instrument.photos.push({ id: uuid(), url: ev.target.result, caption: file.name });
+                pushToServer('syncAllSupervisions', state.supervisions);
+                render();
+              };
+              reader.readAsDataURL(file);
+            });
+          }
+          var upDoc = document.getElementById('input-upload-doc');
+          if (upDoc) {
+            upDoc.addEventListener('change', function (e) {
+              var file = e.target.files[0];
+              if (!file) return;
+              activeSv.instrument.documents = activeSv.instrument.documents || [];
+              activeSv.instrument.documents.push({ id: uuid(), name: file.name, type: file.type, url: '#', stage: 'pra' });
+              pushToServer('syncAllSupervisions', state.supervisions);
+              render();
+            });
+          }
+          document.querySelectorAll('[data-del-photo]').forEach(function (el) {
+            el.addEventListener('click', function () {
+              var pid = el.getAttribute('data-del-photo');
+              activeSv.instrument.photos = activeSv.instrument.photos.filter(function (p) { return p.id !== pid; });
+              pushToServer('syncAllSupervisions', state.supervisions);
+              render();
+            });
+          });
+          document.querySelectorAll('[data-del-doc]').forEach(function (el) {
+            el.addEventListener('click', function () {
+              var did = el.getAttribute('data-del-doc');
+              activeSv.instrument.documents = activeSv.instrument.documents.filter(function (d) { return d.id !== did; });
+              pushToServer('syncAllSupervisions', state.supervisions);
+              render();
+            });
+          });
+          var btnSvPdf = document.getElementById('btn-sv-pdf');
+          if (btnSvPdf) btnSvPdf.addEventListener('click', function () { exportSupervisionPdf(activeSv); });
+          var btnSvWord = document.getElementById('btn-sv-word');
+          if (btnSvWord) {
+            btnSvWord.addEventListener('click', function () {
+              state.activeTab = 'laporan';
+              render();
+              setTimeout(function () {
+                var area = document.getElementById('laporan-print-area');
+                if (area) exportWordDocument('Laporan Supervisi', area.innerHTML, 'Laporan_Supervisi_SIPERAK.doc');
+              }, 100);
+            });
+          }
+        }
+
+        // AI Trigger
+        document.querySelectorAll('[data-run-ai]').forEach(function (el) {
+          el.addEventListener('click', function () {
+            var sv = state.supervisions.find(function (s) { return s.id === state.selectedSupervisiId; });
+            if (!sv) return;
+            runAiAnalysisForSession(sv, el.getAttribute('data-run-ai'));
+          });
+        });
+
+        // Laporan bindings
+        var lapSelect = document.getElementById('laporan-sv-select');
+        if (lapSelect) lapSelect.addEventListener('change', function (e) { state.selectedSupervisiId = e.target.value; render(); });
+        var btnLapPdf = document.getElementById('btn-laporan-pdf');
+        if (btnLapPdf) {
+          btnLapPdf.addEventListener('click', function () {
+            var sv = state.supervisions.find(function (s) { return s.id === state.selectedSupervisiId; });
+            if (sv) exportSupervisionPdf(sv);
+          });
+        }
+        var btnLapWord = document.getElementById('btn-laporan-word');
+        if (btnLapWord) {
+          btnLapWord.addEventListener('click', function () {
+            var area = document.getElementById('laporan-print-area');
+            if (area) exportWordDocument('Laporan Hasil Supervisi', area.innerHTML, 'Laporan_Hasil_Supervisi_SIPERAK.doc');
+          });
+        }
+
+        // Tindak Lanjut bindings
+        var tlSearch = document.getElementById('tl-search');
+        if (tlSearch) tlSearch.addEventListener('input', function (e) { state.tlSearch = e.target.value; render(); });
+        var tlFilter = document.getElementById('tl-impact-filter');
+        if (tlFilter) tlFilter.addEventListener('change', function (e) { state.tlImpactFilter = e.target.value; render(); });
+        var btnAddTl = document.getElementById('btn-add-tl');
+        if (btnAddTl) btnAddTl.addEventListener('click', openAddFollowUpModal);
+        document.querySelectorAll('[data-del-tl]').forEach(function (el) {
+          el.addEventListener('click', function () {
+            var tid = el.getAttribute('data-del-tl');
+            state.followUps = state.followUps.filter(function (f) { return f.id !== tid; });
+            pushToServer('syncAllFollowUps', state.followUps);
+            render();
+          });
+        });
+
+        // Pengaturan Sekolah bindings
+        document.querySelectorAll('[data-pick-jenjang]').forEach(function (el) {
+          el.addEventListener('click', function () {
+            var j = el.getAttribute('data-pick-jenjang');
+            state.schoolConfig.schoolLevel = j;
+            state.schoolConfig.kopAuthority = ['TK', 'SD', 'SMP'].indexOf(j) >= 0 ? KOP_AUTHORITY_KAB : KOP_AUTHORITY_CABDIN;
+            render();
+          });
+        });
+        var btnSaveSchool = document.getElementById('btn-save-school-cfg');
+        if (btnSaveSchool) {
+          btnSaveSchool.addEventListener('click', function () {
+            state.schoolConfig.kopAuthority = document.getElementById('cfg-kop').value;
+            state.schoolConfig.academicYear = document.getElementById('cfg-year').value;
+            state.schoolConfig.schoolName = document.getElementById('cfg-name').value;
+            state.schoolConfig.schoolNpsn = document.getElementById('cfg-npsn').value;
+            state.schoolConfig.schoolAddress = document.getElementById('cfg-addr').value;
+            state.schoolConfig.headmasterName = document.getElementById('cfg-head-name').value;
+            state.schoolConfig.headmasterNip = document.getElementById('cfg-head-nip').value;
+            state.schoolConfig.supervisorName = document.getElementById('cfg-sup-name').value;
+            state.schoolConfig.supervisorNip = document.getElementById('cfg-sup-nip').value;
+            pushToServer('saveSchoolConfig', state.schoolConfig);
+            showToast('Pengaturan sekolah berhasil disimpan & disinkronkan.', 'success');
+            render();
+          });
+        }
+      }
+
+      // =====================================================================
+      // AKSI & MODAL WORKFLOW
+      // =====================================================================
+      function openConfirmModal(title, message, onConfirm) {
+        openModal(
+          '<div class="bg-white rounded-2xl p-6 max-w-md w-full shadow-2xl border border-gray-100 space-y-4">' +
+          '  <h3 class="font-display font-bold text-lg text-gray-900">' + esc(title) + '</h3>' +
+          '  <p class="text-sm text-gray-600">' + esc(message) + '</p>' +
+          '  <div class="flex justify-end gap-2">' +
+          '    <button type="button" id="modal-cancel-btn" class="px-4 py-2 text-xs font-bold text-gray-600 hover:bg-gray-100 rounded-xl cursor-pointer">Batal</button>' +
+          '    <button type="button" id="modal-confirm-btn" class="px-4 py-2 text-xs font-bold bg-rose-600 text-white rounded-xl cursor-pointer">Ya, Hapus</button>' +
+          '  </div>' +
+          '</div>'
+        );
+        document.getElementById('modal-cancel-btn').addEventListener('click', closeModal);
+        document.getElementById('modal-confirm-btn').addEventListener('click', function () {
+          closeModal();
+          onConfirm();
+        });
+      }
+
+      function openGuruFormModal(existingGuru) {
+        var g = existingGuru || { id: '', nama: '', nip: '', pangkat: '', mapel: '', jenjang: state.schoolConfig.schoolLevel, status: 'ASN', kelas: '' };
+        openModal(
+          '<form id="form-guru-modal" class="bg-white rounded-2xl p-6 max-w-lg w-full shadow-2xl space-y-4">' +
+          '  <h3 class="font-display font-bold text-lg">' + (existingGuru ? 'Edit Data Guru' : 'Tambah Guru Baru') + '</h3>' +
+          '  <div class="grid grid-cols-1 sm:grid-cols-2 gap-3 text-xs">' +
+          '    <div class="sm:col-span-2"><label class="font-bold text-gray-600">Nama Lengkap &amp; Gelar *</label><input required id="fg-nama" value="' + esc(g.nama) + '" class="mt-1 w-full px-3 py-2 border border-gray-200 rounded-xl text-sm" /></div>' +
+          '    <div><label class="font-bold text-gray-600">NIP / NUPTK</label><input id="fg-nip" value="' + esc(g.nip) + '" class="mt-1 w-full px-3 py-2 border border-gray-200 rounded-xl text-sm" /></div>' +
+          '    <div><label class="font-bold text-gray-600">Pangkat / Golongan</label><input id="fg-pangkat" value="' + esc(g.pangkat) + '" class="mt-1 w-full px-3 py-2 border border-gray-200 rounded-xl text-sm" /></div>' +
+          '    <div><label class="font-bold text-gray-600">Mata Pelajaran *</label><input required id="fg-mapel" value="' + esc(g.mapel) + '" class="mt-1 w-full px-3 py-2 border border-gray-200 rounded-xl text-sm" /></div>' +
+          '    <div><label class="font-bold text-gray-600">Kelas / Fase</label><input id="fg-kelas" value="' + esc(g.kelas || '') + '" class="mt-1 w-full px-3 py-2 border border-gray-200 rounded-xl text-sm" /></div>' +
+          '    <div><label class="font-bold text-gray-600">Jenjang</label><select id="fg-jenjang" class="mt-1 w-full px-3 py-2 border border-gray-200 rounded-xl text-sm">' +
+          JENJANG_OPTIONS.map(function (j) { return '<option value="' + j.id + '" ' + (g.jenjang === j.id ? 'selected' : '') + '>' + j.id + '</option>'; }).join('') +
+          '    </select></div>' +
+          '    <div><label class="font-bold text-gray-600">Status Kepegawaian</label><select id="fg-status" class="mt-1 w-full px-3 py-2 border border-gray-200 rounded-xl text-sm">' +
+          STATUS_KEPEGAWAIAN.map(function (st) { return '<option value="' + st + '" ' + (g.status === st ? 'selected' : '') + '>' + st + '</option>'; }).join('') +
+          '    </select></div>' +
+          '  </div>' +
+          '  <div class="flex justify-end gap-2 pt-2">' +
+          '    <button type="button" id="fg-cancel" class="px-4 py-2 text-xs font-bold text-gray-600 rounded-xl hover:bg-gray-100 cursor-pointer">Batal</button>' +
+          '    <button type="submit" class="px-5 py-2 text-xs font-bold bg-brand-600 text-white rounded-xl cursor-pointer">Simpan Data</button>' +
+          '  </div>' +
+          '</form>'
+        );
+        document.getElementById('fg-cancel').addEventListener('click', closeModal);
+        document.getElementById('form-guru-modal').addEventListener('submit', function (e) {
+          e.preventDefault();
+          var record = {
+            id: existingGuru ? existingGuru.id : uuid(),
+            nama: document.getElementById('fg-nama').value.trim(),
+            nip: document.getElementById('fg-nip').value.trim() || '-',
+            pangkat: document.getElementById('fg-pangkat').value.trim() || '-',
+            mapel: document.getElementById('fg-mapel').value.trim(),
+            kelas: document.getElementById('fg-kelas').value.trim(),
+            jenjang: document.getElementById('fg-jenjang').value,
+            status: document.getElementById('fg-status').value,
+          };
+          if (existingGuru) {
+            state.gurus = state.gurus.map(function (x) { return x.id === record.id ? record : x; });
+            state.supervisions = state.supervisions.map(function (sv) {
+              if (sv.instrument.guruId === record.id) {
+                sv.instrument.namaGuru = record.nama;
+                sv.instrument.nipGuru = record.nip;
+                sv.instrument.mapel = record.mapel;
+              }
+              return sv;
+            });
+          } else {
+            state.gurus.push(record);
+            var instr = createEmptyInstrument(record.id, record.nama);
+            instr.nipGuru = record.nip;
+            instr.mapel = record.mapel;
+            instr.kelas = record.kelas;
+            state.supervisions.unshift({ id: 'sv-' + uuid().slice(0, 6), status: 'Direncakan', createdAt: new Date().toISOString(), instrument: instr });
+          }
+          pushToServer('syncAllGurus', state.gurus);
+          pushToServer('syncAllSupervisions', state.supervisions);
+          closeModal();
+          showToast('Data guru berhasil disimpan.', 'success');
+          render();
+        });
+      }
+
+      function startOrOpenSupervisionForGuru(guruId) {
+        var existing = state.supervisions.find(function (sv) { return sv.instrument.guruId === guruId; });
+        if (existing) {
+          state.selectedSupervisiId = existing.id;
+        } else {
+          var g = state.gurus.find(function (x) { return x.id === guruId; });
+          var instr = createEmptyInstrument(guruId, g ? g.nama : '');
+          if (g) {
+            instr.nipGuru = g.nip;
+            instr.mapel = g.mapel;
+            instr.kelas = g.kelas || '';
+          }
+          var created = { id: 'sv-' + uuid().slice(0, 6), status: 'Direncakan', createdAt: new Date().toISOString(), instrument: instr };
+          state.supervisions.unshift(created);
+          state.selectedSupervisiId = created.id;
+          pushToServer('syncAllSupervisions', state.supervisions);
+        }
+        state.activeTab = 'instrumen';
+        state.sessionStage = 'pra';
+        render();
+      }
+
+      function openNewScheduleModal() {
+        if (state.gurus.length === 0) {
+          openGuruFormModal(null);
+          return;
+        }
+        openModal(
+          '<form id="form-new-sched" class="bg-white rounded-2xl p-6 max-w-md w-full shadow-2xl space-y-4">' +
+          '  <h3 class="font-display font-bold text-lg">Buat Jadwal Supervisi Baru</h3>' +
+          '  <div><label class="block text-xs font-bold text-gray-600 mb-1">Pilih Guru</label><select id="ns-guru" class="w-full px-3 py-2 border border-gray-200 rounded-xl text-sm">' +
+          state.gurus.map(function (g) { return '<option value="' + esc(g.id) + '">' + esc(g.nama) + ' (' + esc(g.mapel) + ')</option>'; }).join('') +
+          '  </select></div>' +
+          '  <div><label class="block text-xs font-bold text-gray-600 mb-1">Tanggal Observasi</label><input type="date" id="ns-tgl" class="w-full px-3 py-2 border border-gray-200 rounded-xl text-sm" /></div>' +
+          '  <div class="flex justify-end gap-2">' +
+          '    <button type="button" id="ns-cancel" class="px-4 py-2 text-xs font-bold text-gray-600 rounded-xl hover:bg-gray-100 cursor-pointer">Batal</button>' +
+          '    <button type="submit" class="px-4 py-2 text-xs font-bold bg-brand-600 text-white rounded-xl cursor-pointer">Buat &amp; Buka</button>' +
+          '  </div>' +
+          '</form>'
+        );
+        document.getElementById('ns-cancel').addEventListener('click', closeModal);
+        document.getElementById('form-new-sched').addEventListener('submit', function (e) {
+          e.preventDefault();
+          var gid = document.getElementById('ns-guru').value;
+          var tgl = document.getElementById('ns-tgl').value;
+          var g = state.gurus.find(function (x) { return x.id === gid; });
+          var instr = createEmptyInstrument(gid, g ? g.nama : '');
+          if (g) {
+            instr.nipGuru = g.nip;
+            instr.mapel = g.mapel;
+            instr.kelas = g.kelas || '';
+          }
+          instr.tglObs = tgl;
+          var created = { id: 'sv-' + uuid().slice(0, 6), status: 'Direncakan', createdAt: new Date().toISOString(), instrument: instr };
+          state.supervisions.unshift(created);
+          state.selectedSupervisiId = created.id;
+          state.sessionStage = 'pra';
+          pushToServer('syncAllSupervisions', state.supervisions);
+          closeModal();
+          render();
+        });
+      }
+
+      function openRubricModal() {
+        openModal(
+          '<div class="bg-white rounded-2xl p-6 max-w-2xl w-full shadow-2xl space-y-4">' +
+          '  <div class="flex justify-between items-center border-b border-gray-100 pb-3"><h3 class="font-display font-bold text-lg">Pilih Preset Rubrik Supervisi</h3><button type="button" id="rm-close" class="text-xs font-bold text-gray-500 cursor-pointer">Tutup</button></div>' +
+          '  <div class="grid grid-cols-1 gap-3 max-h-96 overflow-y-auto">' +
+          PRESET_INSTRUMENTS.map(function (p) {
+            return (
+              '<div class="p-4 border border-gray-200 rounded-xl flex items-center justify-between gap-4 hover:border-brand-300">' +
+              '  <div><span class="text-[10px] font-bold uppercase px-2 py-0.5 rounded bg-brand-50 text-brand-700">' + esc(p.badge) + '</span><p class="font-bold text-sm mt-1">' + esc(p.name) + '</p><p class="text-xs text-gray-500">' + esc(p.description) + '</p></div>' +
+              '  <button type="button" data-apply-preset="' + p.id + '" class="px-3.5 py-2 bg-brand-600 text-white rounded-xl text-xs font-bold shrink-0 cursor-pointer">Gunakan</button>' +
+              '</div>'
+            );
+          }).join('') +
+          '  </div>' +
+          '</div>'
+        );
+        document.getElementById('rm-close').addEventListener('click', closeModal);
+        document.querySelectorAll('[data-apply-preset]').forEach(function (el) {
+          el.addEventListener('click', function () {
+            var preset = PRESET_INSTRUMENTS.find(function (p) { return p.id === el.getAttribute('data-apply-preset'); });
+            if (preset) {
+              state.rubricSections = JSON.parse(JSON.stringify(preset.sections));
+              state.instrumentTitle = preset.name;
+              pushToServer('saveRubricConfig', state.rubricSections, state.instrumentTitle);
+              closeModal();
+              showToast('Rubrik aktif diubah ke: ' + preset.name, 'success');
+              render();
+            }
+          });
+        });
+      }
+
+      function openAddFollowUpModal() {
+        openModal(
+          '<form id="form-tl" class="bg-white rounded-2xl p-6 max-w-lg w-full shadow-2xl space-y-4">' +
+          '  <h3 class="font-display font-bold text-lg">Tambah Rencana Tindak Lanjut</h3>' +
+          '  <div class="space-y-3 text-xs">' +
+          '    <div><label class="font-bold text-gray-600">Nama Guru *</label><input required id="tl-nama" class="mt-1 w-full px-3 py-2 border border-gray-200 rounded-xl text-sm" /></div>' +
+          '    <div><label class="font-bold text-gray-600">Mata Pelajaran</label><input id="tl-mapel" class="mt-1 w-full px-3 py-2 border border-gray-200 rounded-xl text-sm" /></div>' +
+          '    <div><label class="font-bold text-gray-600">Temuan Pembelajaran *</label><input required id="tl-temuan" placeholder="Contoh: Diferensiasi konten belum optimal" class="mt-1 w-full px-3 py-2 border border-gray-200 rounded-xl text-sm" /></div>' +
+          '    <div><label class="font-bold text-gray-600">Program Intervensi *</label><input required id="tl-intervensi" placeholder="Contoh: Coaching & Workshop Modul Ajar" class="mt-1 w-full px-3 py-2 border border-gray-200 rounded-xl text-sm" /></div>' +
+          '    <div><label class="font-bold text-gray-600">Dampak</label><select id="tl-dampak" class="mt-1 w-full px-3 py-2 border border-gray-200 rounded-xl text-sm"><option value="Dipantau">Dipantau</option><option value="Meningkat">Meningkat</option><option value="Perlu Pendampingan">Perlu Pendampingan</option></select></div>' +
+          '  </div>' +
+          '  <div class="flex justify-end gap-2">' +
+          '    <button type="button" id="tl-cancel" class="px-4 py-2 text-xs font-bold text-gray-600 rounded-xl cursor-pointer">Batal</button>' +
+          '    <button type="submit" class="px-5 py-2 text-xs font-bold bg-brand-600 text-white rounded-xl cursor-pointer">Simpan</button>' +
+          '  </div>' +
+          '</form>'
+        );
+        document.getElementById('tl-cancel').addEventListener('click', closeModal);
+        document.getElementById('form-tl').addEventListener('submit', function (e) {
+          e.preventDefault();
+          var temuan = document.getElementById('tl-temuan').value.trim();
+          var dampak = document.getElementById('tl-dampak').value;
+          state.followUps.unshift({
+            id: 'tl-' + uuid().slice(0, 6),
+            guruNama: document.getElementById('tl-nama').value.trim(),
+            mapel: document.getElementById('tl-mapel').value.trim(),
+            temuan: temuan,
+            intervensi: document.getElementById('tl-intervensi').value.trim(),
+            status: dampak === 'Meningkat' ? 'Terealisasi' : 'Dipantau',
+            dampak: dampak,
+            smartRekomendasi: getSmartRecommendation(temuan),
+            sudahRefleksi: true,
+            sudahTindakLanjut: true,
+            perubahanPraktik: dampak === 'Meningkat',
+            perluPendampingan: dampak !== 'Meningkat',
+            tglSupervisi: new Date().toISOString().split('T')[0],
+          });
+          pushToServer('syncAllFollowUps', state.followUps);
+          closeModal();
+          showToast('Tindak lanjut berhasil ditambahkan.', 'success');
+          render();
+        });
+      }
+
+      function handleImportGuruExcel(e) {
+        var file = e.target.files[0];
+        if (!file || typeof XLSX === 'undefined') return;
+        var reader = new FileReader();
+        reader.onload = function (ev) {
+          var wb = XLSX.read(new Uint8Array(ev.target.result), { type: 'array' });
+          var rows = XLSX.utils.sheet_to_json(wb.Sheets[wb.SheetNames[0]]);
+          var added = 0;
+          rows.forEach(function (r) {
+            var nama = String(r['Nama Guru'] || r['nama'] || '').trim();
+            if (!nama) return;
+            var gid = uuid();
+            var nip = String(r['NIP'] || r['nip'] || '-');
+            var mapel = String(r['Mata Pelajaran'] || r['mapel'] || '-');
+            var kelas = String(r['Kelas'] || r['kelas'] || '');
+            state.gurus.push({
+              id: gid,
+              nama: nama,
+              nip: nip,
+              pangkat: String(r['Pangkat / Gol'] || r['pangkat'] || '-'),
+              mapel: mapel,
+              jenjang: String(r['Jenjang'] || state.schoolConfig.schoolLevel),
+              status: String(r['Status'] || 'ASN'),
+              kelas: kelas,
+            });
+            var instr = createEmptyInstrument(gid, nama);
+            instr.nipGuru = nip;
+            instr.mapel = mapel;
+            instr.kelas = kelas;
+            state.supervisions.unshift({ id: 'sv-' + uuid().slice(0, 6), status: 'Direncakan', createdAt: new Date().toISOString(), instrument: instr });
+            added++;
+          });
+          pushToServer('syncAllGurus', state.gurus);
+          pushToServer('syncAllSupervisions', state.supervisions);
+          showToast(added + ' guru berhasil diimpor dari Excel.', 'success');
+          render();
+        };
+        reader.readAsArrayBuffer(file);
+      }
+
+      function handleImportScheduleExcel(e) {
+        var file = e.target.files[0];
+        if (!file || typeof XLSX === 'undefined') return;
+        var reader = new FileReader();
+        reader.onload = function (ev) {
+          var wb = XLSX.read(new Uint8Array(ev.target.result), { type: 'array' });
+          var rows = XLSX.utils.sheet_to_json(wb.Sheets[wb.SheetNames[0]]);
+          var added = 0;
+          rows.forEach(function (r) {
+            var nama = String(r['Nama Guru'] || '').trim();
+            if (!nama) return;
+            var matched = state.gurus.find(function (g) { return g.nama.toLowerCase() === nama.toLowerCase(); });
+            if (!matched) {
+              matched = { id: uuid(), nama: nama, nip: String(r['NIP'] || '-'), pangkat: '-', mapel: String(r['Mata Pelajaran'] || '-'), jenjang: state.schoolConfig.schoolLevel, status: 'ASN' };
+              state.gurus.push(matched);
+            }
+            var instr = createEmptyInstrument(matched.id, matched.nama);
+            instr.nipGuru = String(r['NIP'] || matched.nip);
+            instr.mapel = String(r['Mata Pelajaran'] || matched.mapel);
+            instr.kelas = String(r['Kelas'] || '-');
+            instr.materi = String(r['Materi'] || '-');
+            instr.tglPra = String(r['Tgl Pra-Obs'] || '');
+            instr.tglObs = String(r['Tgl Observasi'] || '');
+            instr.tglPasca = String(r['Tgl Pasca-Obs'] || '');
+            state.supervisions.unshift({ id: 'sv-' + uuid().slice(0, 6), status: String(r['Status'] || 'Direncakan'), createdAt: new Date().toISOString(), instrument: instr });
+            added++;
+          });
+          pushToServer('syncAllGurus', state.gurus);
+          pushToServer('syncAllSupervisions', state.supervisions);
+          showToast(added + ' jadwal supervisi berhasil diimpor.', 'success');
+          render();
+        };
+        reader.readAsArrayBuffer(file);
+      }
+
+      function runAiAnalysisForSession(sv, stage) {
+        if (!isAppsScriptEnv()) {
+          showToast('Analisis AI dijalankan melalui Code.gs saat dideploy di Google Apps Script (dengan GEMINI_API_KEY di Script Properties).', 'info');
+          return;
+        }
+        var g = state.gurus.find(function (x) { return x.id === sv.instrument.guruId; });
+        var guruNama = (g && g.nama) || sv.instrument.namaGuru || 'Guru';
+        state.aiLoading = true;
+        render();
+
+        google.script.run
+          .withSuccessHandler(function (res) {
+            state.aiLoading = false;
+            if (stage === 'pra') sv.instrument.praAI = res.analysis;
+            else if (stage === 'observasi') sv.instrument.obsAI = res.analysis;
+            else if (stage === 'pasca') sv.instrument.pascaAI = res.analysis;
+            if (res.kekuatan) sv.instrument.kekuatan = res.kekuatan;
+            if (res.perbaikan) sv.instrument.perbaikan = res.perbaikan;
+            if (res.rekomendasi) sv.instrument.rekomendasi = res.rekomendasi;
+            if (res.scoreInterpretation) sv.instrument.analysisScore = res.scoreInterpretation;
+            if (res.rtlSuggestion) sv.instrument.rtl = Object.assign({}, sv.instrument.rtl, res.rtlSuggestion);
+            pushToServer('syncAllSupervisions', state.supervisions);
+            showToast('Analisis AI Gemini selesai diterapkan.', 'success');
+            render();
+          })
+          .withFailureHandler(function (err) {
+            state.aiLoading = false;
+            showToast('Gagal analisis AI: ' + (err.message || err), 'error');
+            render();
+          })
+          .analyzeSupervisionWithAI({ stage: stage, guruNama: guruNama, instrument: sv.instrument });
+      }
+
+      // =====================================================================
+      // INISIALISASI APLIKASI
+      // =====================================================================
+      function initApp() {
+        if (isAppsScriptEnv()) {
+          google.script.run
+            .withSuccessHandler(function (data) {
+              if (data) {
+                if (data.schoolConfig) state.schoolConfig = data.schoolConfig;
+                if (data.programConfig) state.programConfig = data.programConfig;
+                if (data.rubricSections && data.rubricSections.length) state.rubricSections = data.rubricSections;
+                if (data.instrumentTitle) state.instrumentTitle = data.instrumentTitle;
+                if (Array.isArray(data.gurus)) state.gurus = data.gurus;
+                if (Array.isArray(data.supervisions)) state.supervisions = data.supervisions;
+                if (Array.isArray(data.followUps)) state.followUps = data.followUps;
+                state.spreadsheetUrl = data.spreadsheetUrl || '';
+                state.hasGeminiKey = Boolean(data.hasGeminiKey);
+              }
+              state.loadingInitial = false;
+              render();
+            })
+            .withFailureHandler(function (err) {
+              state.loadingInitial = false;
+              showToast('Mode lokal aktif (gagal memuat Sheet: ' + (err.message || err) + ')', 'error');
+              render();
+            })
+            .getInitialAppData();
+        } else {
+          try {
+            var raw = localStorage.getItem('siperak_gas_backup');
+            if (raw) {
+              var parsed = JSON.parse(raw);
+              if (parsed.schoolConfig) state.schoolConfig = parsed.schoolConfig;
+              if (parsed.programConfig) state.programConfig = parsed.programConfig;
+              if (parsed.rubricSections) state.rubricSections = parsed.rubricSections;
+              if (parsed.instrumentTitle) state.instrumentTitle = parsed.instrumentTitle;
+              if (Array.isArray(parsed.gurus)) state.gurus = parsed.gurus;
+              if (Array.isArray(parsed.supervisions)) state.supervisions = parsed.supervisions;
+              if (Array.isArray(parsed.followUps)) state.followUps = parsed.followUps;
+            }
+          } catch (e) {}
+          state.loadingInitial = false;
+          render();
+        }
+      }
+
+      initApp();
+    })();
+  </script>
+</body>
+</html>
